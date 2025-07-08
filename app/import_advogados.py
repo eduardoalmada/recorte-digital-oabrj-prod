@@ -1,15 +1,12 @@
 import csv
 import os
-import sys
+from app import create_app, db
+from app.models import Advogado
 
-# Adiciona o diretório raiz do projeto ao sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Caminho relativo do CSV
+CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral.csv')
 
-from app import app
-from app.models import db, Advogado
-
-# Caminho do CSV relativo à raiz do projeto
-CSV_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'lista-adv-oab-geral.csv')
+app = create_app()
 
 with app.app_context():
     with open(CSV_PATH, newline='', encoding='utf-8') as csvfile:
