@@ -1,6 +1,6 @@
-from app.celery_worker import celery
-from app.utils.datajud_client import buscar_publicacoes
+from celery import shared_task
 
-@celery.task
+@shared_task
 def tarefa_buscar_publicacoes():
-    buscar_publicacoes()
+    print("🔎 Buscando publicações no DataJud...")
+    # Aqui vai a lógica da busca real
