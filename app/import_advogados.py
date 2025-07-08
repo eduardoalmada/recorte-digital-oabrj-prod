@@ -5,7 +5,7 @@ import sys
 # Adiciona o diretório raiz do projeto ao sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from __init__ import app
+from app import app
 from app.models import db, Advogado
 
 # Caminho do CSV relativo à raiz do projeto
