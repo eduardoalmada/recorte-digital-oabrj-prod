@@ -1,5 +1,4 @@
 from flask import Flask
-from .tasks import tarefa_buscar_publicacoes
 
 def create_app():
     app = Flask(__name__)
