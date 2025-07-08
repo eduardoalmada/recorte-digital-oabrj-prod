@@ -18,9 +18,8 @@ def create_app():
     def index():
         return "✅ Recorte Digital OABRJ em produção."
 
-    # Importa os modelos e cria as tabelas (se necessário)
-    with app.app_context():
-        from app import models
-        db.create_all()
+    import time
+time.sleep(5)  # Espera 5 segundos antes de conectar ao banco
+
 
     return app
