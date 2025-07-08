@@ -1,15 +1,16 @@
-from celery import Celery
 import os
+from celery import Celery
 from dotenv import load_dotenv
 
 load_dotenv()
 
 celery = Celery(
-    'recorte',
+    "recorte",
     broker=os.getenv("REDIS_BROKER_URL"),
     backend=os.getenv("REDIS_BROKER_URL")
 )
 
-celery.conf.timezone = 'America/Sao_Paulo'
+celery.autodiscover_tasks(['app'])
 
-from app.tasks import tarefa_buscar_publicacoes  # noqa
+# Força o registro das tasks (sem causar import circular)
+import app.tasks  # noqa
