@@ -2,8 +2,8 @@ import csv
 import os
 import sys
 
-# Adiciona a raiz do projeto ao sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Adiciona o diretório raiz do projeto ao sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app import app
 from app.models import db, Advogado
