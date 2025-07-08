@@ -3,8 +3,8 @@ import os
 from app import app
 from app.models import db, Advogado
 
-# Caminho relativo para o arquivo CSV
-CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral.csv')
+# Caminho correto: sobe um diretório a partir de `app/`
+CSV_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'lista-adv-oab-geral.csv')
 
 with app.app_context():
     with open(CSV_PATH, newline='', encoding='utf-8') as csvfile:
