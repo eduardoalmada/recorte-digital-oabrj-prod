@@ -24,15 +24,6 @@ def create_app():
     # Importa os modelos
     from app.models import Advogado,Publicacao
 
-    @app.route("/initdb")  # ✅ Corrigida a indentação
-    def init_db():
-        try:
-            from app.models import Advogado, Publicacao
-            db.create_all()
-            return "✅ Tabelas criadas com sucesso!"
-        except Exception as e:
-            return f"❌ Erro ao criar tabelas: {str(e)}", 500
-
     @app.route("/")
     def index():
         return "✅ Recorte Digital OABRJ em produção."
