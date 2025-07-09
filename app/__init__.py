@@ -10,6 +10,8 @@ db = SQLAlchemy()
 migrate = Migrate()
 
 def create_app():
+    print("📄 Variável DATABASE_URL do os.environ:", os.environ.get("DATABASE_URL"))
+    
     app = Flask(__name__)
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
