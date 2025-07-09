@@ -1,6 +1,4 @@
-from flask_sqlalchemy import SQLAlchemy
-
-db = SQLAlchemy()
+from app import db
 
 class Advogado(db.Model):
     __tablename__ = 'advogado'  # define explicitamente o nome da tabela
