@@ -9,8 +9,13 @@ CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral.
 app = create_app()
 
 with app.app_context():
-    with open(CSV_PATH, newline='', encoding='utf-8-sig') as csvfile:
-        reader = csv.DictReader(csvfile,delimiter=';')
+    with open(CSV_PATH, newline='', encoding='utf-8') as csvfile:
+       reader = csv.DictReader(csvfile, delimiter=';')
+        first_row = next(reader)
+        print("📄 Primeira linha do CSV:", first_row)
+        csvfile.seek(0)  # volta pro início do arquivo
+        next(reader)  # pula o cabeçalho de novo
+
         for row in reader:
             advogado = Advogado(
                 nome_completo=row['nome_completo'],
