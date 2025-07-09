@@ -12,7 +12,7 @@ migrate = Migrate()
 def create_app():
     print("📄 Variável DATABASE_URL do os.environ:", os.environ.get("DATABASE_URL"))
 
-    app = Flask(_name_)
+    app = Flask(__name__)  # ✅ Corrigido aqui
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -24,10 +24,10 @@ def create_app():
     # Importa os modelos
     from app import models
 
-    @app.route("/initdb")
+    @app.route("/initdb")  # ✅ Corrigida a indentação
     def init_db():
         try:
-            from app.models import Advogado, Publicacao  # 🔁 Força o registro
+            from app.models import Advogado, Publicacao
             db.create_all()
             return "✅ Tabelas criadas com sucesso!"
         except Exception as e:
