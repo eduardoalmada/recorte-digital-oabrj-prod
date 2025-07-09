@@ -11,8 +11,8 @@ migrate = Migrate()
 
 def create_app():
     print("📄 Variável DATABASE_URL do os.environ:", os.environ.get("DATABASE_URL"))
-    
-    app = Flask(__name__)
+
+    app = Flask(_name_)
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -24,15 +24,14 @@ def create_app():
     # Importa os modelos
     from app import models
 
-   @app.route("/initdb")
+    @app.route("/initdb")
     def init_db():
-    try:
-        from app.models import Advogado, Publicacao  # 🔁 Força registro
-        db.create_all()
-        return "✅ Tabelas criadas com sucesso!"
-    except Exception as e:
-        return f"❌ Erro ao criar tabelas: {str(e)}", 500
-        
+        try:
+            from app.models import Advogado, Publicacao  # 🔁 Força o registro
+            db.create_all()
+            return "✅ Tabelas criadas com sucesso!"
+        except Exception as e:
+            return f"❌ Erro ao criar tabelas: {str(e)}", 500
 
     @app.route("/")
     def index():
