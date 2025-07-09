@@ -24,14 +24,14 @@ def create_app():
     # Importa os modelos
     from app import models
 
-    @app.route("/initdb")
+   @app.route("/initdb")
     def init_db():
-        try:
-            from app import models
-            db.create_all()
-            return "✅ Tabelas criadas com sucesso!"
-        except Exception as e:
-            return f"❌ Erro ao criar tabelas: {str(e)}", 500
+    try:
+        from app.models import Advogado, Publicacao  # 🔁 Força registro
+        db.create_all()
+        return "✅ Tabelas criadas com sucesso!"
+    except Exception as e:
+        return f"❌ Erro ao criar tabelas: {str(e)}", 500
         
 
     @app.route("/")
