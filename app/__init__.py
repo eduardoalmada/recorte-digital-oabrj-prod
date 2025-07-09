@@ -22,7 +22,7 @@ def create_app():
     migrate.init_app(app, db)
 
     # Importa os modelos
-    from app import models
+    from app.models import Advogado,Publicacao
 
     @app.route("/initdb")  # ✅ Corrigida a indentação
     def init_db():
