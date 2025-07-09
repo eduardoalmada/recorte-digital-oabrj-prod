@@ -20,11 +20,6 @@ def create_app():
     # Importa os modelos
     from app import models
 
-    @app.route("/initdb")
-    def init_db():
-        db.create_all()
-        return "✅ Tabelas criadas com sucesso!"
-
     @app.route("/")
     def index():
         return "✅ Recorte Digital OABRJ em produção."
