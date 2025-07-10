@@ -33,7 +33,7 @@ def create_app():
         csv_path = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral.csv')
 
         try:
-            with open(csv_path, newline='', encoding='utf-8') as csvfile:
+            with open(csv_path, newline='', encoding='utf-8-sig') as csvfile:
                 reader = csv.DictReader(csvfile, delimiter=';')
                 count = 0
                 for row in reader:
