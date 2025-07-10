@@ -5,7 +5,7 @@ class Advogado(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     nome_completo = db.Column(db.String(255), nullable=False)
-    numero_oab = db.Column(db.String(20), nullable=False, unique=True)
+    numero_oab = db.Column(db.String(20), nullable=False)
     whatsapp = db.Column(db.String(20), nullable=True)
     email = db.Column(db.String(255), nullable=True)
 
