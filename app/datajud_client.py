@@ -3,30 +3,30 @@ from datetime import datetime
 from app import create_app, db
 from app.models import Advogado, Publicacao
 from app.config import Config
-import os
 
 app = create_app()
 
-def enviar_whatsapp(telefone, mensagem):
-    url = os.getenv("WHATSAPP_API_URL")
-    if not url:
-        print("❌ WHATSAPP_API_URL não configurado.")
-        return
+# Função para enviar mensagem via WhatsApp usando a UZAPI
+def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
+    url = "https://oabrj.uzapi.com.br:3333/sendLink"
 
     payload = {
-        "phone": telefone,
-        "message": mensagem
+        "session": "oab",
+        "sessionkey": "oab",
+        "number": numero,  # Exemplo: "5521987654321"
+        "text": f"Olá {nome_advogado}, encontramos uma publicação com seu nome: *{titulo}*",
+        "linkUrl": link,
+        "linkText": "Clique aqui para ver no Diário Oficial"
     }
 
-    try:
-        response = requests.post(url, json=payload)
-        if response.status_code == 200:
-            print(f"📲 Mensagem enviada para {telefone}")
-        else:
-            print(f"❌ Erro ao enviar para {telefone}: {response.text}")
-    except Exception as e:
-        print(f"⚠️ Erro inesperado no envio de WhatsApp: {str(e)}")
+    response = requests.post(url, json=payload)
 
+    if response.status_code == 200:
+        print(f"📨 Mensagem enviada com sucesso para {numero}")
+    else:
+        print(f"❌ Erro ao enviar para {numero}: {response.status_code} - {response.text}")
+
+# Busca no DataJud por nome
 
 def buscar_publicacoes_por_nome(nome_completo):
     headers = {
@@ -48,9 +48,10 @@ def buscar_publicacoes_por_nome(nome_completo):
     if response.status_code == 200:
         return response.json().get("hits", {}).get("hits", [])
     else:
-        print(f"❌ Erro {response.status_code} ao buscar '{nome_completo}': {response.text}")
+        print(f"❌ Erro {response.status_code}: {response.text}")
         return []
 
+# Processa e salva publicações no banco
 
 def processar_publicacoes():
     with app.app_context():
@@ -62,9 +63,8 @@ def processar_publicacoes():
 
             for item in resultados:
                 doc = item["_source"]
-                link = "https://www3.tjrj.jus.br/consultadje/"  # link fixo
+                link = "https://www3.tjrj.jus.br/consultadje/"
 
-                # Evita duplicatas
                 existe = Publicacao.query.filter_by(titulo=doc.get('assunto'), link=link).first()
                 if existe:
                     continue
@@ -80,19 +80,17 @@ def processar_publicacoes():
                 db.session.add(nova_pub)
                 total_novas += 1
 
-                # Envia WhatsApp
+                # Envia mensagem via WhatsApp se houver número
                 if advogado.whatsapp:
-                    mensagem = (
-                        f"📢 Olá {advogado.nome_completo}, encontramos uma nova publicação em seu nome no DJe-RJ.\n\n"
-                        f"📌 Assunto: {nova_pub.titulo}\n"
-                        f"📅 Data: {nova_pub.data.strftime('%d/%m/%Y')}\n"
-                        f"🔗 Link: {nova_pub.link}"
+                    enviar_mensagem_whatsapp(
+                        numero=advogado.whatsapp,
+                        titulo=nova_pub.titulo,
+                        link=nova_pub.link,
+                        nome_advogado=advogado.nome_completo.split()[0]
                     )
-                    enviar_whatsapp(advogado.whatsapp, mensagem)
 
         db.session.commit()
         print(f"✅ {total_novas} novas publicações salvas no banco.")
-
 
 if __name__ == "__main__":
     processar_publicacoes()
