@@ -27,7 +27,7 @@ def enviar_mensagem_whatsapp(numero, titulo, descricao, link):
 
 # Exemplo de teste
 enviar_mensagem_whatsapp(
-    numero="5521987654321",
+    numero="5521986727627",
     titulo="🚨 Nova publicação",
     descricao="Seu nome foi citado no Diário Oficial. Veja mais detalhes no link abaixo.",
     link="https://www3.tjrj.jus.br/consultadje/"
