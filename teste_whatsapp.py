@@ -7,7 +7,7 @@ def enviar_mensagem_whatsapp(numero, titulo, descricao, link):
         "session": "oab",  # nome da sessão que você me passou
         "number": numero,
         "text": descricao,
-        "link": link,
+        "url": link,
         "title": titulo
     }
 
