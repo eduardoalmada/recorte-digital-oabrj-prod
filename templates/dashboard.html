@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head><title>📋 Publicações</title></head>
+  <body>
+    <h1>Publicações recentes</h1>
+    <table border="1">
+      <tr><th>Data</th><th>Advogado</th><th>Título</th><th>Ações</th></tr>
+      {% for pub in publicacoes %}
+      <tr>
+        <td>{{ pub.data.strftime('%d/%m/%Y') }}</td>
+        <td>{{ pub.advogado.nome_completo }}</td>
+        <td>{{ pub.titulo }}</td>
+        <td><a href="{{ pub.link }}" target="_blank">Ver DJE</a></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>
