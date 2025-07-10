@@ -1,44 +1,66 @@
 import requests
 from datetime import datetime
+from app import create_app, db
+from app.models import Advogado, Publicacao
 from app.config import Config
 
-def buscar_publicacoes():
+app = create_app()
+
+def buscar_publicacoes_por_nome(nome_completo):
     headers = {
         "Authorization": f"APIKey {Config.DATAJUD_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    # Exemplo de um nome a ser pesquisado — futuramente será uma lista vinda do banco
-    nomes_para_busca = [
-        {"nome": "Daniel Soares Motta", "oab": "123456"},
-        {"nome": "Ivan dos Santos Gonçalves", "oab": "654321"},
-        {"nome": "Leandro Terra Oliveira Comyn do Amaral", "oab": "789101"}
-    ]
-
-    for advogado in nomes_para_busca:
-        payload = {
-            "query": {
-                "bool": {
-                    "must": [
-                        {"match_phrase": {"nome_parte": advogado["nome"]}},
-                        {"match_phrase": {"numero_oab": advogado["oab"]}}
-                    ]
-                }
+    payload = {
+        "query": {
+            "match_phrase": {
+                "nome_parte": nome_completo
             }
-        }
+        },
+        "size": 100
+    }
 
-        response = requests.post(Config.DATAJUD_API_URL, json=payload, headers=headers)
+    response = requests.post(Config.DATAJUD_API_URL, json=payload, headers=headers)
 
-        if response.status_code == 200:
-            dados = response.json()
-            resultados = dados.get("hits", {}).get("hits", [])
+    if response.status_code == 200:
+        return response.json().get("hits", {}).get("hits", [])
+    else:
+        print(f"❌ Erro {response.status_code}: {response.text}")
+        return []
 
-            if resultados:
-                for item in resultados:
-                    doc = item["_source"]
-                    print("🚨 Nova publicação encontrada!")
-                    print(f"Título: {doc.get('assunto')}")
-                    print(f"Link: https://www3.tjrj.jus.br/consultadje/")
-                    print(f"Data: {doc.get('data_movimento')}")
-                    print(f"Descrição: {doc.get('texto_decisao', 'Sem resumo.')}")
-                    print("--------")
+def processar_publicacoes():
+    with app.app_context():
+        advogados = Advogado.query.all()
+        total_novas = 0
+
+        for advogado in advogados:
+            resultados = buscar_publicacoes_por_nome(advogado.nome_completo)
+
+            for item in resultados:
+                doc = item["_source"]
+
+                # Identificador único (pode mudar conforme DataJud)
+                link = "https://www3.tjrj.jus.br/consultadje/"
+
+                # Verifica se já existe publicação igual (evita duplicatas)
+                existe = Publicacao.query.filter_by(titulo=doc.get('assunto'), link=link).first()
+                if existe:
+                    continue
+
+                nova_pub = Publicacao(
+                    advogado_id=advogado.id,
+                    titulo=doc.get("assunto", "Sem título"),
+                    descricao=doc.get("texto_decisao", "Sem descrição."),
+                    data=datetime.strptime(doc.get("data_movimento"), "%Y-%m-%d"),
+                    link=link
+                )
+
+                db.session.add(nova_pub)
+                total_novas += 1
+
+        db.session.commit()
+        print(f"✅ {total_novas} novas publicações salvas no banco.")
+
+if __name__ == "__main__":
+    processar_publicacoes()
