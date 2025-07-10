@@ -4,12 +4,12 @@ from app import create_app, db
 from app.models import Advogado
 
 # Caminho relativo do CSV corrigido
-CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral-limpo.csv')
+CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral.csv')
 
 app = create_app()
 
 with app.app_context():
-    with open(CSV_PATH, newline='', encoding='utf-8') as csvfile:
+    with open(CSV_PATH, newline='', encoding='utf-8-sig') as csvfile:
         reader = csv.DictReader(csvfile, delimiter=';')
 
         # Mostra a primeira linha lida
