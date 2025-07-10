@@ -1,17 +1,22 @@
 import requests
 
 def enviar_mensagem_whatsapp(numero, titulo, descricao, link):
-    url = "https://oabrj.uzapi.com.br:3333/sendLink?sessionkey=oab"
-    
+    url = "https://oabrj.uzapi.com.br:3333/sendLink"
+
+    headers = {
+        "Content-Type": "application/json",
+        "sessionkey": "oab"  # <- CORRETO: header, não query param
+    }
+
     payload = {
-        "session": "oab",  # nome da sessão que você me passou
+        "session": "oab",
         "number": numero,
         "text": descricao,
         "url": link,
         "title": titulo
     }
 
-    response = requests.post(url, json=payload)
+    response = requests.post(url, headers=headers, json=payload)
 
     if response.status_code == 200:
         print("✅ Mensagem enviada com sucesso!")
