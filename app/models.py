@@ -20,3 +20,4 @@ class Publicacao(db.Model):
     descricao = db.Column(db.Text, nullable=True)
     link = db.Column(db.String(255), nullable=False)
     data = db.Column(db.Date, nullable=False)
+    notificado = db.Column(db.Boolean, default=False)
