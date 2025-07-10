@@ -21,9 +21,14 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
 
+    # Importa os modelos (necessário para o migrate funcionar corretamente)
     from app.models import Advogado, Publicacao
-    from app import views
 
+    # Importa e registra o Blueprint de views
+    from app.views import views
+    app.register_blueprint(views)
+
+    # Rota auxiliar para importar os advogados
     @app.route("/importar_advogados")
     def importar_advogados():
         if request.args.get("key") != os.getenv("IMPORT_KEY"):
