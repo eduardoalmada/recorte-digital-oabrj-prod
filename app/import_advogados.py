@@ -3,27 +3,36 @@ import os
 from app import create_app, db
 from app.models import Advogado
 
-# Caminho relativo do CSV
-CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral.csv')
+# Caminho relativo do CSV corrigido
+CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral-limpo.csv')
 
 app = create_app()
 
 with app.app_context():
     with open(CSV_PATH, newline='', encoding='utf-8') as csvfile:
-       reader = csv.DictReader(csvfile, delimiter=';')
+        reader = csv.DictReader(csvfile, delimiter=';')
+
+        # Mostra a primeira linha lida
         first_row = next(reader)
         print("📄 Primeira linha do CSV:", first_row)
-        csvfile.seek(0)  # volta pro início do arquivo
-        next(reader)  # pula o cabeçalho de novo
 
+        # Reposiciona o ponteiro e pula o cabeçalho
+        csvfile.seek(0)
+        next(reader)
+
+        count = 0
         for row in reader:
-            advogado = Advogado(
-                nome_completo=row['nome_completo'],
-                numero_oab=row['numero_oab'],
-                whatsapp=row.get('whatsapp'),
-                email=row.get('email')
-            )
-            db.session.add(advogado)
-        db.session.commit()
+            try:
+                advogado = Advogado(
+                    nome_completo=row['nome_completo'].strip(),
+                    numero_oab=row['numero_oab'].strip(),
+                    whatsapp=row.get('whatsapp', '').strip(),
+                    email=row.get('email', '').strip()
+                )
+                db.session.add(advogado)
+                count += 1
+            except Exception as e:
+                print(f"⚠️ Erro na linha {count + 2}: {e}")  # +2 porque pulou o cabeçalho
 
-    print("✅ Dados importados com sucesso.")
+        db.session.commit()
+        print(f"✅ {count} advogados importados com sucesso.")
