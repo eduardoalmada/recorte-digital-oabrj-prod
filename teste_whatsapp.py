@@ -1,7 +1,7 @@
 import requests
 
 def enviar_mensagem_whatsapp(numero, titulo, descricao, link):
-    url = "https://oabrj.uzapi.com.br:3333/sendLink"
+    url = "https://oabrj.uzapi.com.br:3333/sendLink?sessionkey=oab"
     
     payload = {
         "session": "oab",  # nome da sessão que você me passou
