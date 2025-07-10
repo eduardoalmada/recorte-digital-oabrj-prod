@@ -22,6 +22,7 @@ def create_app():
     migrate.init_app(app, db)
 
     from app.models import Advogado, Publicacao
+    from app import views
 
     @app.route("/importar_advogados")
     def importar_advogados():
