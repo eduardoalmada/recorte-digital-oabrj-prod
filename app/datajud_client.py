@@ -60,6 +60,8 @@ def processar_publicacoes():
 
         for advogado in advogados:
             resultados = buscar_publicacoes_por_nome(advogado.nome_completo)
+            print(f"🔍 Buscando publicações para {advogado.nome_completo}")
+            print(f"🔢 Encontrados {len(resultados)} resultados")
 
             for item in resultados:
                 doc = item["_source"]
