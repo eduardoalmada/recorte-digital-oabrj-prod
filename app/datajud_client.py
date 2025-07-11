@@ -6,7 +6,7 @@ from app.config import Config
 
 app = create_app()
 
-# Função para enviar mensagem via WhatsApp usando a UZAPI
+# Envia mensagem via WhatsApp
 def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
     url = "https://oabrj.uzapi.com.br:3333/sendLink"
 
@@ -28,17 +28,35 @@ def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
         print(f"❌ Erro ao enviar para {numero}: {response.status_code} - {response.text}")
         return False
 
-# Busca no DataJud por nome
-def buscar_publicacoes_por_nome(nome_completo):
+# Busca usando nome e opcionalmente OAB
+def buscar_publicacoes_datajud(nome_completo, numero_oab=None):
     headers = {
         "Authorization": f"APIKey {Config.DATAJUD_API_KEY}",
         "Content-Type": "application/json"
     }
 
+    # Usa multi_match com nome + match OAB se disponível
+    must_clauses = [
+        {
+            "multi_match": {
+                "query": nome_completo,
+                "type": "phrase",
+                "fields": ["nome_parte", "texto_decisao", "nome_advogado", "outros_participantes"]
+            }
+        }
+    ]
+
+    if numero_oab:
+        must_clauses.append({
+            "match_phrase": {
+                "numero_oab": numero_oab
+            }
+        })
+
     payload = {
         "query": {
-            "match_phrase": {
-                "nome_parte": nome_completo
+            "bool": {
+                "must": must_clauses
             }
         },
         "size": 100
@@ -52,47 +70,49 @@ def buscar_publicacoes_por_nome(nome_completo):
         print(f"❌ Erro {response.status_code}: {response.text}")
         return []
 
-# Processa e salva publicações no banco
+# Processa só o advogado Eduardo Pacheco
 def processar_publicacoes():
     with app.app_context():
-        advogados = Advogado.query.all()
+        eduardo = Advogado.query.filter(Advogado.nome_completo.ilike("%EDUARDO PACHECO DE CASTRO%")).first()
+
+        if not eduardo:
+            print("⚠️ Advogado Eduardo não encontrado no banco.")
+            return
+
+        resultados = buscar_publicacoes_datajud(eduardo.nome_completo, eduardo.numero_oab)
+        print(f"🔍 Buscando publicações para {eduardo.nome_completo}")
+        print(f"🔢 Encontrados {len(resultados)} resultados")
+
         total_novas = 0
+        for item in resultados:
+            doc = item["_source"]
+            link = "https://www3.tjrj.jus.br/consultadje/"
 
-        for advogado in advogados:
-            resultados = buscar_publicacoes_por_nome(advogado.nome_completo)
-            print(f"🔍 Buscando publicações para {advogado.nome_completo}")
-            print(f"🔢 Encontrados {len(resultados)} resultados")
+            # Evita duplicata
+            existe = Publicacao.query.filter_by(titulo=doc.get('assunto'), link=link).first()
+            if existe:
+                continue
 
-            for item in resultados:
-                doc = item["_source"]
-                link = "https://www3.tjrj.jus.br/consultadje/"
+            nova_pub = Publicacao(
+                advogado_id=eduardo.id,
+                titulo=doc.get("assunto", "Sem título"),
+                descricao=doc.get("texto_decisao", "Sem descrição."),
+                data=datetime.strptime(doc.get("data_movimento"), "%Y-%m-%d"),
+                link=link
+            )
 
-                # Verifica se já existe publicação igual
-                existe = Publicacao.query.filter_by(titulo=doc.get('assunto'), link=link).first()
-                if existe:
-                    continue
-
-                nova_pub = Publicacao(
-                    advogado_id=advogado.id,
-                    titulo=doc.get("assunto", "Sem título"),
-                    descricao=doc.get("texto_decisao", "Sem descrição."),
-                    data=datetime.strptime(doc.get("data_movimento"), "%Y-%m-%d"),
-                    link=link
+            if eduardo.whatsapp:
+                enviado = enviar_mensagem_whatsapp(
+                    numero=eduardo.whatsapp,
+                    titulo=nova_pub.titulo,
+                    link=nova_pub.link,
+                    nome_advogado=eduardo.nome_completo.split()[0]
                 )
+                if enviado:
+                    nova_pub.notificado = True
 
-                # Envia mensagem via WhatsApp se houver número
-                if advogado.whatsapp:
-                    enviado = enviar_mensagem_whatsapp(
-                        numero=advogado.whatsapp,
-                        titulo=nova_pub.titulo,
-                        link=nova_pub.link,
-                        nome_advogado=advogado.nome_completo.split()[0]
-                    )
-                    if enviado:
-                        nova_pub.notificado = True
-
-                db.session.add(nova_pub)
-                total_novas += 1
+            db.session.add(nova_pub)
+            total_novas += 1
 
         db.session.commit()
         print(f"✅ {total_novas} novas publicações salvas no banco.")
