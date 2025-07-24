@@ -10,10 +10,15 @@ db = SQLAlchemy()
 migrate = Migrate()
 
 def create_app():
-    print("📄 Variável DATABASE_URL do os.environ:", os.environ.get("DATABASE_URL"))
+    # 🔧 Lê de SQLALCHEMY_DATABASE_URI primeiro (Render), depois DATABASE_URL (heroku ou local)
+    db_uri = os.getenv("SQLALCHEMY_DATABASE_URI") or os.getenv("DATABASE_URL")
+    if not db_uri:
+        raise RuntimeError("❌ Nenhuma URI de banco encontrada nas variáveis de ambiente.")
+
+    print("📄 DATABASE_URL utilizada:", db_uri)
 
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL")
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     print("📦 Banco configurado:", app.config['SQLALCHEMY_DATABASE_URI'])
@@ -21,43 +26,4 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # Importa os modelos (necessário para o migrate funcionar corretamente)
-    from app.models import Advogado, Publicacao
-
-    # Importa e registra o Blueprint de views
-    from app.views import views
-    app.register_blueprint(views)
-
-    # Rota auxiliar para importar os advogados
-    @app.route("/importar_advogados")
-    def importar_advogados():
-        if request.args.get("key") != os.getenv("IMPORT_KEY"):
-            return "🔒 Acesso não autorizado", 403
-
-        import csv
-
-        csv_path = os.path.join(os.path.dirname(__file__), 'data', 'lista-adv-oab-geral.csv')
-
-        try:
-            with open(csv_path, newline='', encoding='utf-8-sig') as csvfile:
-                reader = csv.DictReader(csvfile, delimiter=';')
-                count = 0
-                for row in reader:
-                    advogado = Advogado(
-                        nome_completo=row['nome_completo'].strip(),
-                        numero_oab=row['numero_oab'].strip(),
-                        whatsapp=row.get('whatsapp', '').strip(),
-                        email=row.get('email', '').strip()
-                    )
-                    db.session.add(advogado)
-                    count += 1
-                db.session.commit()
-            return f"✅ {count} advogados importados com sucesso!"
-        except Exception as e:
-            return f"❌ Erro ao importar: {str(e)}", 500
-
-    @app.route("/")
-    def index():
-        return "✅ Recorte Digital OABRJ em produção."
-
-    return app
+    # (continua o restante do seu código normalmente)
