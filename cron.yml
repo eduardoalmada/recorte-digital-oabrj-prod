@@ -1,0 +1,4 @@
+cron:
+  - name: executar_scraper_djerj
+    schedule: "0 18 * * *"  # 18h UTC = 15h BRT
+    command: "python -m app.scrapers.scraper_djerj_selenium"
