@@ -1,11 +1,11 @@
 # Usa imagem leve com Python
 FROM python:3.10-slim
 
-# Variáveis de ambiente para melhor desempenho
+# Evita criação de arquivos .pyc e força flush de stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Instala dependências do sistema, incluindo o Google Chrome
+# Instala dependências do sistema e o Google Chrome
 RUN apt-get update && \
     apt-get install -y wget curl gnupg unzip ca-certificates \
     fonts-liberation libappindicator3-1 libasound2 libatk-bridge2.0-0 libatk1.0-0 \
@@ -16,15 +16,18 @@ RUN apt-get update && \
     rm chrome.deb && \
     apt-get clean
 
-# Define a pasta do app
+# Define a pasta de trabalho
 WORKDIR /app
 
-# Copia tudo do projeto
-COPY . /app
+# Copia o conteúdo do projeto
+COPY . .
 
-# Instala dependências Python
+# Instala o pip globalmente e todas as dependências do projeto
 RUN python -m pip install --upgrade pip && \
     python -m pip install -r requirements.txt
 
-# Comando padrão (usado apenas no web server)
-CMD gunicorn main:app
+# Garante que gunicorn está no PATH (por segurança)
+RUN ln -s /usr/local/bin/gunicorn /usr/bin/gunicorn
+
+# Comando padrão (Web service)
+CMD ["gunicorn", "main:app"]
