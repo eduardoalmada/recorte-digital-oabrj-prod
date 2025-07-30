@@ -26,4 +26,9 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # (continua o restante do seu código normalmente)
+    # ✅ Rota principal para Render/Web
+    @app.route("/")
+    def index():
+        return "🧪 Recorte Digital (versão de teste)"
+
+    return app
