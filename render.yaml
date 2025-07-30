@@ -17,7 +17,6 @@ services:
     name: Worker-recorte-digital-oabrj-prod
     env: docker
     dockerfilePath: ./Dockerfile
-    startCommand: celery -A app.celery_worker.celery worker --loglevel=info
     envVars:
       - key: REDIS_BROKER_URL
         sync: false
@@ -32,7 +31,6 @@ services:
     name: recorte-digital-beat
     env: docker
     dockerfilePath: ./Dockerfile
-    startCommand: celery -A app.celery_worker.celery beat --loglevel=info
     envVars:
       - key: REDIS_BROKER_URL
         sync: false
