@@ -3,47 +3,36 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import requests
 
 from app import create_app, db
 from app.models import Advogado, Publicacao
 
-# Cria o app Flask e contexto do banco
 app = create_app()
 
 def configurar_driver():
-    """Configura o navegador headless via Selenium"""
     options = Options()
+    options.binary_location = "/usr/bin/google-chrome"
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920x1080")
+    return webdriver.Chrome(service=Service(), options=options)
 
 def buscar_publicacoes_djerj():
-    """Acessa o site do DJERJ via Selenium e retorna lista de textos encontrados"""
     hoje = datetime.now().strftime("%d/%m/%Y")
     url = f"https://www3.tjrj.jus.br/consultadje/ConsultaPagina?cdCaderno=10&cdSecao=1&dataPublicacao={hoje}&cdDiario=1&pagina=1"
-
     driver = configurar_driver()
     driver.get(url)
     time.sleep(3)
-
     html = driver.page_source
     soup = BeautifulSoup(html, "html.parser")
     driver.quit()
-
-    publicacoes = []
-    for div in soup.find_all("div", class_="ementa"):
-        texto = div.get_text(strip=True)
-        publicacoes.append(texto)
-    
-    return publicacoes
+    return [div.get_text(strip=True) for div in soup.find_all("div", class_="ementa")]
 
 def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
-    """Envia mensagem via WhatsApp usando UZAPI"""
     url = "https://oabrj.uzapi.com.br:3333/sendLink"
     payload = {
         "session": "oab",
@@ -53,11 +42,9 @@ def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
         "linkUrl": link,
         "linkText": "Clique aqui para ver no Diário Oficial"
     }
-    response = requests.post(url, json=payload)
-    return response.status_code == 200
+    return requests.post(url, json=payload).status_code == 200
 
 def processar_publicacoes_djerj():
-    """Processa e envia as publicações aos advogados cadastrados"""
     with app.app_context():
         advogados = Advogado.query.all()
         texto_publicacoes = buscar_publicacoes_djerj()
@@ -66,7 +53,6 @@ def processar_publicacoes_djerj():
         for advogado in advogados:
             for texto in texto_publicacoes:
                 if advogado.nome_completo.upper() in texto.upper():
-                    # Evita duplicata
                     if Publicacao.query.filter_by(titulo=texto).first():
                         continue
 
