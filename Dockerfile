@@ -23,8 +23,8 @@ WORKDIR /app
 COPY . /app
 
 # Instala dependências Python
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN python -m pip install --upgrade pip && \
+    python -m pip install -r requirements.txt
 
 # Comando padrão (usado apenas no web server)
 CMD gunicorn main:app
