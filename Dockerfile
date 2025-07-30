@@ -28,4 +28,5 @@ RUN /usr/local/bin/python -m pip install --upgrade pip && \
     /usr/local/bin/python -m pip install -r requirements.txt
 
 # Comando padrão (Web service)
-CMD ["gunicorn", "main:app"]
+CMD ["gunicorn", "main:app", "--bind", "0.0.0.0:$PORT"]
+
