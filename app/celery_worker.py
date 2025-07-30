@@ -18,8 +18,8 @@ import app.tasks  # noqa
 from celery.schedules import crontab
 
 celery.conf.beat_schedule = {
-    'buscar-publicacoes-diariamente': {
+    'buscar-publicacoes-a-cada-5-min': {
         'task': 'app.tasks.tarefa_buscar_publicacoes',
-        'schedule': crontab(hour=8, minute=0),  # ⏰ 08:00 da manhã todos os dias
+        'schedule': crontab(minute='*/5'),  # ⏱️ A cada 5 minutos
     },
 }
