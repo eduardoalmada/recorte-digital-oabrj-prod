@@ -10,9 +10,17 @@ celery = Celery(
     backend=os.getenv("REDIS_BROKER_URL")
 )
 
+celery.conf.update(
+    task_routes={
+        'app.tasks.*': {'queue': 'default'},
+    },
+    timezone='America/Sao_Paulo',
+    enable_utc=False,
+)
+
 celery.autodiscover_tasks(['app'])
 
-# Força o registro das tasks (sem causar import circular)
+# Força o registro explícito das tasks
 import app.tasks  # noqa
 
 from celery.schedules import crontab
@@ -20,6 +28,6 @@ from celery.schedules import crontab
 celery.conf.beat_schedule = {
     'buscar-publicacoes-a-cada-5-min': {
         'task': 'app.tasks.tarefa_buscar_publicacoes',
-        'schedule': crontab(minute='*/5'),  # ⏱️ A cada 5 minutos
+        'schedule': crontab(minute='*/5'),  # A cada 5 minutos
     },
 }
