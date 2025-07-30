@@ -29,6 +29,6 @@ def create_app():
     # ✅ Rota principal para Render/Web
     @app.route("/")
     def index():
-        return "🧪 Recorte Digital Funcionando"
+        return "🧪 Recorte Digital Funcionando no Render"
 
     return app
