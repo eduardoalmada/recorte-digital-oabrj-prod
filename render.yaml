@@ -3,7 +3,6 @@ services:
     name: recorte-digital-oabrj-prod
     env: docker
     dockerfilePath: ./Dockerfile
-    startCommand: gunicorn main:app
     envVars:
       - key: REDIS_BROKER_URL
         sync: false
