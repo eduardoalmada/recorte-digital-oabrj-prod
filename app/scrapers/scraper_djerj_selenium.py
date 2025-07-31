@@ -27,19 +27,23 @@ def buscar_publicacoes_djerj():
 
 
 def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
-    url = "https://oabrj.uzapi.com.br:3333/sendLink"
+    url = "https://oabrj.uzapi.com.br:3333/sendText"  # Usar endpoint correto
+
+    headers = {
+        "Content-Type": "application/json",
+        "sessionkey": "oab"  # Agora no header
+    }
+
     payload = {
         "session": "oab",
-        "sessionkey": "oab",
         "number": numero,
-        "text": f"Olá {nome_advogado}, encontramos uma publicação com seu nome: *{titulo}*",
-        "linkUrl": link,
-        "linkText": "Clique aqui para ver no Diário Oficial"
+        "text": f"Olá {nome_advogado}, encontramos uma publicação com seu nome: *{titulo}*\nAcesse o Diário Oficial: {link}"
     }
-    print(f"📤 Enviando para {numero}: {payload}")
-    response = requests.post(url, data=payload)
-    print(f"📬 Código de resposta: {response.status_code} - {response.text}")
-    return requests.post(url, json=payload).status_code == 200
+
+    response = requests.post(url, json=payload, headers=headers)
+    print(f"📤 Envio status: {response.status_code} - {response.text}")
+    return response.status_code == 200
+
 
 def processar_publicacoes_djerj():
     with app.app_context():
