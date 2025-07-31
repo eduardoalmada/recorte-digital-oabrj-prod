@@ -37,7 +37,7 @@ def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
         "linkText": "Clique aqui para ver no Diário Oficial"
     }
     print(f"📤 Enviando para {numero}: {payload}")
-    response = requests.post(url, json=payload)
+    response = requests.post(url, data=payload)
     print(f"📬 Código de resposta: {response.status_code} - {response.text}")
     return requests.post(url, json=payload).status_code == 200
 
