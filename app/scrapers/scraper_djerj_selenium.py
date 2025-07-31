@@ -20,15 +20,11 @@ def configurar_driver():
     return webdriver.Chrome(options=options)
 
 def buscar_publicacoes_djerj():
-    hoje = datetime.now().strftime("%d/%m/%Y")
-    url = f"https://www3.tjrj.jus.br/consultadje/ConsultaPagina?cdCaderno=10&cdSecao=1&dataPublicacao={hoje}&cdDiario=1&pagina=1"
-    driver = configurar_driver()
-    driver.get(url)
-    time.sleep(3)
-    html = driver.page_source
-    soup = BeautifulSoup(html, "html.parser")
-    driver.quit()
-    return [div.get_text(strip=True) for div in soup.find_all("div", class_="ementa")]
+    print("⚠️  Modo de teste ativo: publicação fictícia sendo usada.")
+    return [
+        "AÇÃO DE COBRANÇA. MARIA DAS GRAÇAS DE MIRANDA MARQUES - OAB/RJ 123456 - Publicação referente ao processo nº 0001234-56.2025.8.19.0001. Sentença proferida em 31/07/2025."
+    ]
+
 
 def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
     url = "https://oabrj.uzapi.com.br:3333/sendLink"
