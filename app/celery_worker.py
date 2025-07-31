@@ -28,6 +28,6 @@ from celery.schedules import crontab
 celery.conf.beat_schedule = {
     'buscar-publicacoes-a-cada-5-min': {
         'task': 'app.tasks.tarefa_buscar_publicacoes',
-        'schedule': crontab(hour=15, minute=0),  # 15h todos os dias
+        'schedule': crontab(minute='*/5'),  # teste de 5 min
     },
 }
