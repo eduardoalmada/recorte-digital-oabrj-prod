@@ -24,4 +24,5 @@ RUN /usr/local/bin/python -m pip install --upgrade pip && \
 
 ENV PATH="/usr/local/bin:$PATH"
 
-CMD ["gunicorn", "main:app", "--bind", "0.0.0.0:$PORT"]
+CMD ["sh", "-c", "gunicorn main:app --bind 0.0.0.0:${PORT:-10000}"]
+
