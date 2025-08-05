@@ -23,11 +23,13 @@ celery.autodiscover_tasks(['app'])
 # Força o registro explícito das tasks
 import app.tasks  # noqa
 
-from celery.schedules import crontab
+# Só ativa o agendamento do Beat se for o container do beat
+if os.getenv("IS_BEAT", "false").lower() == "true":
+    from celery.schedules import crontab
 
-celery.conf.beat_schedule = {
-    'buscar-publicacoes-a-cada-5-min': {
-        'task': 'app.tasks.tarefa_buscar_publicacoes',
-        'schedule': crontab(hour=15,minute=0),  # 15h
-    },
-}
+    celery.conf.beat_schedule = {
+        'buscar-publicacoes-a-cada-dia': {
+            'task': 'app.tasks.tarefa_buscar_publicacoes',
+            'schedule': crontab(hour=15, minute=0),  # 15h (horário de Brasília)
+        },
+    }
