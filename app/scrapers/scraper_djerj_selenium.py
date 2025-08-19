@@ -1,10 +1,10 @@
 import time
-import unicodedata
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
 import requests
+import unicodedata
 
 from app import create_app, db
 from app.models import Advogado, Publicacao
@@ -14,38 +14,49 @@ app = create_app()
 
 def configurar_driver():
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless")
+    options.add_argument("--headless=new")  # Novo modo headless
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
-    options.binary_location = "/usr/bin/google-chrome"
+    options.add_argument("--window-size=1920,1080")
+    options.binary_location = "/usr/bin/google-chrome"  # Chrome dentro do container
 
-    return webdriver.Chrome(options=options)
+    return webdriver.Chrome(
+        executable_path="/usr/local/bin/chromedriver",
+        options=options
+    )
+
+
+def normalizar_texto(texto: str) -> str:
+    """Remove acentos, coloca em maiúsculas e tira espaços extras."""
+    if not texto:
+        return ""
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    return texto.upper().strip()
 
 
 def buscar_publicacoes_djerj():
     hoje = datetime.now().strftime("%d/%m/%Y")
     url = f"https://www3.tjrj.jus.br/consultadje/ConsultaPagina?cdCaderno=10&cdSecao=1&dataPublicacao={hoje}&cdDiario=1&pagina=1"
 
-    print(f"🌐 Buscando publicações no DJERJ para a data {hoje}...")
     driver = configurar_driver()
     driver.get(url)
     time.sleep(3)
-
     html = driver.page_source
     soup = BeautifulSoup(html, "html.parser")
     driver.quit()
 
-    publicacoes = [div.get_text(strip=True) for div in soup.find_all("div", class_="ementa")]
-    print(f"📑 Total de publicações extraídas: {len(publicacoes)}")
-    return publicacoes
+    textos = [div.get_text(strip=True) for div in soup.find_all("div", class_="ementa")]
+    print(f"📄 Total de publicações capturadas hoje: {len(textos)}")
+    return textos
 
 
 def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
-    url = "https://oabrj.uzapi.com.br:3333/sendText"  # endpoint correto
+    url = "https://oabrj.uzapi.com.br:3333/sendText"
 
     headers = {
         "Content-Type": "application/json",
-        "sessionkey": "oab"  # no header
+        "sessionkey": "oab"
     }
 
     payload = {
@@ -54,18 +65,13 @@ def enviar_mensagem_whatsapp(numero, titulo, link, nome_advogado):
         "text": f"Olá {nome_advogado}, encontramos uma publicação com seu nome: *{titulo}*\nAcesse o Diário Oficial: {link}"
     }
 
-    response = requests.post(url, json=payload, headers=headers)
-    print(f"📤 Envio status: {response.status_code} - {response.text}")
-    return response.status_code == 200
-
-
-def normalizar(texto: str) -> str:
-    """Remove acentos e deixa em maiúsculo para comparação robusta."""
-    if not texto:
-        return ""
-    texto = unicodedata.normalize("NFD", texto)
-    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
-    return texto.upper().strip()
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
+        print(f"📤 Envio status: {response.status_code} - {response.text}")
+        return response.status_code == 200
+    except Exception as e:
+        print(f"❌ Erro ao enviar WhatsApp: {e}")
+        return False
 
 
 def processar_publicacoes_djerj():
@@ -73,23 +79,21 @@ def processar_publicacoes_djerj():
         advogados = Advogado.query.all()
         texto_publicacoes = buscar_publicacoes_djerj()
 
-        print(f"👨‍⚖️ Total de advogados carregados: {len(advogados)}")
+        print(f"👩‍⚖️ Total de advogados carregados do banco: {len(advogados)}")
 
         total_novas = 0
 
         for advogado in advogados:
-            nome_normalizado = normalizar(advogado.nome_completo)
-            for texto in texto_publicacoes:
-                texto_normalizado = normalizar(texto)
+            nome_normalizado = normalizar_texto(advogado.nome_completo)
 
-                # Debug: imprime se encontrar "ADRIANA"
-                if "ADRIANA" in texto_normalizado:
-                    print(f"🔍 DEBUG: Publicação contém 'ADRIANA': {texto[:120]}...")
+            for texto in texto_publicacoes:
+                texto_normalizado = normalizar_texto(texto)
 
                 if nome_normalizado in texto_normalizado:
-                    print(f"✅ MATCH encontrado para {advogado.nome_completo}")
+                    print(f"✅ Match encontrado: {advogado.nome_completo}")
 
                     if Publicacao.query.filter_by(titulo=texto[:100]).first():
+                        print("⚠️ Publicação já existe, ignorando...")
                         continue
 
                     nova_pub = Publicacao(
