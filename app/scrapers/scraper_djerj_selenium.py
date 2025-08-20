@@ -1,4 +1,4 @@
-# app/scrapers/scraper_djerj_selenium.py - VERSÃO CORRIGIDA PARA consultadje
+# app/scrapers/scraper_djerj_selenium.py - VERSÃO CORRETA
 import os
 import time
 from datetime import datetime, date
@@ -16,82 +16,103 @@ from app.models import DiarioOficial
 def iniciar_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--remote-debugging-port=9222")
+    
     driver = webdriver.Chrome(options=chrome_options)
     return driver
 
-def encontrar_diario_do_dia(driver):
-    """Encontra o link para o diário do dia atual no consultadje"""
+def pesquisar_diario_do_dia(driver):
+    """Faz pesquisa no sistema consultadje para encontrar o diário de hoje"""
     try:
-        print("🔍 Acessando consultadje...")
-        
-        # Acessa a página correta
+        print("🔍 Acessando sistema de pesquisa...")
         driver.get("https://www3.tjrj.jus.br/consultadje/")
         time.sleep(5)
         
-        # Tira screenshot para debug
-        driver.save_screenshot("/tmp/consultadje_debug.png")
-        print("📸 Screenshot salva: /tmp/consultadje_debug.png")
-        
-        # Verifica se está na página correta
-        if "Consultadje" not in driver.title:
-            print(f"❌ Página não é o Consultadje: {driver.title}")
+        # Verifica se carregou a página correta
+        if "Pesquisa DJERJ" not in driver.title:
+            print(f"❌ Página errada: {driver.title}")
             return None
         
+        print("✅ Página de pesquisa carregada")
+        
+        # 1. CLICA NA ABA "PESQUISA"
+        try:
+            aba_pesquisa = driver.find_element(By.XPATH, "//a[@href='#pills-pesquisa']")
+            aba_pesquisa.click()
+            print("✅ Clicou na aba 'Pesquisa'")
+            time.sleep(2)
+        except:
+            print("⚠️ Não encontrou aba pesquisa, continuando...")
+        
+        # 2. PREENCHE DATA DE HOJE
         hoje = date.today()
         data_formatada = hoje.strftime("%d/%m/%Y")
-        print(f"📅 Procurando diário de {data_formatada}")
         
-        # Método 1: Procura por data nos links (mais comum)
+        # Limpa e preenche data inicial
         try:
-            links = driver.find_elements(By.TAG_NAME, "a")
-            pdf_url = None
-            
-            for link in links:
-                href = link.get_attribute("href") or ""
-                text = link.text.strip()
-                
-                # Procura por links de PDF com a data de hoje
-                if (".pdf" in href.lower() and 
-                    (data_formatada in text or data_formatada in href)):
-                    pdf_url = href
-                    print(f"✅ Encontrado PDF: {text} -> {href}")
-                    break
-            
-            if pdf_url:
-                return pdf_url
-        except Exception as e:
-            print(f"⚠️ Erro ao procurar links: {e}")
+            data_inicial = driver.find_element(By.NAME, "dataInicial")
+            data_inicial.clear()
+            data_inicial.send_keys(data_formatada)
+            print(f"✅ Preencheu data inicial: {data_formatada}")
+        except:
+            print("❌ Não encontrou campo data inicial")
+            return None
         
-        # Método 2: Procura em tabelas ou divs específicas
+        # Preenche data final (mesma data)
         try:
-            # Tenta encontrar elementos comuns no consultadje
-            elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'Diário') or contains(text(), 'DJE')]")
-            for element in elements:
-                text = element.text
-                if data_formatada in text:
-                    print(f"📄 Elemento encontrado: {text}")
-                    # Tenta encontrar link próximo
-                    parent = element.find_element(By.XPATH, "./..")
-                    links = parent.find_elements(By.TAG_NAME, "a")
-                    for link in links:
-                        href = link.get_attribute("href")
-                        if href and ".pdf" in href.lower():
-                            print(f"✅ PDF encontrado: {href}")
-                            return href
-        except Exception as e:
-            print(f"⚠️ Erro método 2: {e}")
+            data_final = driver.find_element(By.NAME, "dataFinal")
+            data_final.clear()
+            data_final.send_keys(data_formatada)
+            print(f"✅ Preencheu data final: {data_formatada}")
+        except:
+            print("⚠️ Não encontrou campo data final")
         
-        print("❌ Diário do dia não encontrado")
-        return None
+        # 3. CLICA EM PESQUISAR
+        try:
+            btn_pesquisar = driver.find_element(By.XPATH, "//button[contains(text(), 'Pesquisar')]")
+            btn_pesquisar.click()
+            print("✅ Clicou em Pesquisar")
+            time.sleep(5)  # Espera resultados
+        except:
+            print("❌ Não encontrou botão Pesquisar")
+            return None
+        
+        # 4. VERIFICA RESULTADOS
+        print("🔍 Procurando resultados...")
+        
+        # Tenta encontrar links de PDF nos resultados
+        links = driver.find_elements(By.TAG_NAME, "a")
+        pdf_url = None
+        
+        for link in links:
+            href = link.get_attribute("href") or ""
+            text = link.text.strip()
+            
+            # Procura links de PDF que contenham a data
+            if (".pdf" in href.lower() and 
+                (data_formatada in text or data_formatada in href or "Diário" in text)):
+                pdf_url = href
+                print(f"✅ PDF encontrado: {text} -> {href}")
+                break
+        
+        if not pdf_url:
+            print("❌ Nenhum PDF encontrado nos resultados")
+            # Tira screenshot para debug
+            driver.save_screenshot("/tmp/consultadje_resultados.png")
+            print("📸 Screenshot dos resultados: /tmp/consultadje_resultados.png")
+            return None
+        
+        return pdf_url
         
     except Exception as e:
-        print(f"❌ Erro ao procurar diário: {e}")
+        print(f"❌ Erro na pesquisa: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def executar_scraper():
@@ -108,7 +129,7 @@ def executar_scraper():
 
         driver = iniciar_driver()
         try:
-            pdf_url = encontrar_diario_do_dia(driver)
+            pdf_url = pesquisar_diario_do_dia(driver)
             
             if not pdf_url:
                 print("⚠️ Nenhum diário encontrado para hoje.")
