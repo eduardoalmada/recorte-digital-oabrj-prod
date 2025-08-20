@@ -5,6 +5,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
 import requests
+from sqlalchemy import text  # ✅ IMPORTANTE
 
 from app import create_app, db
 from app.models import Advogado, Publicacao
@@ -38,16 +39,16 @@ def buscar_publicacoes_djerj():
     # Salvar o HTML bruto no banco
     with app.app_context():
         db.session.execute(
-            """
-            CREATE TABLE IF NOT EXISTS html_djerj_raw (
-                id SERIAL PRIMARY KEY,
-                conteudo TEXT NOT NULL,
-                data_insercao TIMESTAMP DEFAULT NOW()
-            )
-            """
+            text("""
+                CREATE TABLE IF NOT EXISTS html_djerj_raw (
+                    id SERIAL PRIMARY KEY,
+                    conteudo TEXT NOT NULL,
+                    data_insercao TIMESTAMP DEFAULT NOW()
+                )
+            """)
         )
         db.session.execute(
-            "INSERT INTO html_djerj_raw (conteudo) VALUES (:conteudo)",
+            text("INSERT INTO html_djerj_raw (conteudo) VALUES (:conteudo)"),
             {"conteudo": html}
         )
         db.session.commit()
