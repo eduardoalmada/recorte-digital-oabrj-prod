@@ -1,7 +1,5 @@
 from datetime import datetime
-from flask_sqlalchemy import SQLAlchemy
-
-db = SQLAlchemy()
+from app import db # Importa a única instância de db do __init__.py
 
 
 class Advogado(db.Model):
