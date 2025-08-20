@@ -3,6 +3,51 @@ services:
     name: recorte-digital-oabrj-prod
     env: docker
     dockerfilePath: ./Dockerfile
+    startCommand: gunicorn main:app --bind 0.0.0.0:${PORT:-10000}
+    envVars:
+      - key: REDIS_BROKER_URL
+        sync: false
+      - key: SQLALCHEMY_DATABASE_URI
+        sync: false
+      - key: WHATSAPP_API_URL
+        sync: false
+      - key: IMPORT_KEY
+        sync: false
+
+  - type: worker
+    name: Worker-recorte-digital-oabrj-prod
+    env: docker
+    dockerfilePath: ./Dockerfile
+    startCommand: celery -A app.celery_worker.celery worker --loglevel=info
+    envVars:
+      - key: REDIS_BROKER_URL
+        sync: false
+      - key: SQLALCHEMY_DATABASE_URI
+        sync: false
+      - key: WHATSAPP_API_URL
+        sync: false
+      - key: IMPORT_KEY
+        sync: false
+
+  - type: worker
+    name: recorte-digital-beat
+    env: docker
+    dockerfilePath: ./Dockerfile
+    startCommand: celery -A app.celery_worker.celery beat --loglevel=info
+    envVars:
+      - key: REDIS_BROKER_URL
+        sync: false
+      - key: SQLALCHEMY_DATABASE_URI
+        sync: false
+      - key: WHATSAPP_API_URL
+        sync: false
+      - key: IMPORT_KEY
+        sync: false
+services:
+  - type: web
+    name: recorte-digital-oabrj-prod
+    env: docker
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: REDIS_BROKER_URL
         sync: false
