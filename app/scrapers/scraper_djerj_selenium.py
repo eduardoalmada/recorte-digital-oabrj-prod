@@ -1,4 +1,4 @@
-# app/scrapers/scraper_djerj_selenium.py - VERSÃO CORRIGIDA
+# app/scrapers/scraper_djerj_selenium.py - VERSÃO CORRIGIDA PARA consultadje
 import os
 import time
 from datetime import datetime, date
@@ -26,48 +26,68 @@ def iniciar_driver():
     return driver
 
 def encontrar_diario_do_dia(driver):
-    """Encontra o link para o diário do dia atual"""
+    """Encontra o link para o diário do dia atual no consultadje"""
     try:
-        print("🔍 Procurando diário do dia...")
+        print("🔍 Acessando consultadje...")
         
-        # Acessa a página correta do DJERJ
-        driver.get("https://dje.tjrn.jus.br/dje/")
-        time.sleep(3)
+        # Acessa a página correta
+        driver.get("https://www3.tjrj.jus.br/consultadje/")
+        time.sleep(5)
         
-        # Tenta encontrar o diário de hoje por diferentes métodos
+        # Tira screenshot para debug
+        driver.save_screenshot("/tmp/consultadje_debug.png")
+        print("📸 Screenshot salva: /tmp/consultadje_debug.png")
+        
+        # Verifica se está na página correta
+        if "Consultadje" not in driver.title:
+            print(f"❌ Página não é o Consultadje: {driver.title}")
+            return None
+        
         hoje = date.today()
         data_formatada = hoje.strftime("%d/%m/%Y")
-        
         print(f"📅 Procurando diário de {data_formatada}")
         
-        # Método 1: Procura por link com a data
+        # Método 1: Procura por data nos links (mais comum)
         try:
             links = driver.find_elements(By.TAG_NAME, "a")
+            pdf_url = None
+            
             for link in links:
                 href = link.get_attribute("href") or ""
                 text = link.text.strip()
                 
-                if data_formatada in text or data_formatada in href:
-                    print(f"✅ Encontrado diário: {text}")
-                    return href
-        except:
-            pass
+                # Procura por links de PDF com a data de hoje
+                if (".pdf" in href.lower() and 
+                    (data_formatada in text or data_formatada in href)):
+                    pdf_url = href
+                    print(f"✅ Encontrado PDF: {text} -> {href}")
+                    break
+            
+            if pdf_url:
+                return pdf_url
+        except Exception as e:
+            print(f"⚠️ Erro ao procurar links: {e}")
         
-        # Método 2: Procura na seção de diários recentes
+        # Método 2: Procura em tabelas ou divs específicas
         try:
-            sections = driver.find_elements(By.TAG_NAME, "section")
-            for section in sections:
-                if "Diário de Justiça" in section.text:
-                    links = section.find_elements(By.TAG_NAME, "a")
+            # Tenta encontrar elementos comuns no consultadje
+            elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'Diário') or contains(text(), 'DJE')]")
+            for element in elements:
+                text = element.text
+                if data_formatada in text:
+                    print(f"📄 Elemento encontrado: {text}")
+                    # Tenta encontrar link próximo
+                    parent = element.find_element(By.XPATH, "./..")
+                    links = parent.find_elements(By.TAG_NAME, "a")
                     for link in links:
-                        if data_formatada in link.text:
-                            pdf_url = link.get_attribute("href")
-                            print(f"✅ Encontrado PDF: {pdf_url}")
-                            return pdf_url
-        except:
-            pass
+                        href = link.get_attribute("href")
+                        if href and ".pdf" in href.lower():
+                            print(f"✅ PDF encontrado: {href}")
+                            return href
+        except Exception as e:
+            print(f"⚠️ Erro método 2: {e}")
         
-        print("❌ Diário do dia não encontrado na página principal")
+        print("❌ Diário do dia não encontrado")
         return None
         
     except Exception as e:
@@ -100,8 +120,8 @@ def executar_scraper():
                 if response.status_code != 200:
                     print(f"❌ PDF não acessível: Status {response.status_code}")
                     return
-            except:
-                print("❌ Erro ao verificar PDF")
+            except Exception as e:
+                print(f"❌ Erro ao verificar PDF: {e}")
                 return
 
             # Salva no banco
