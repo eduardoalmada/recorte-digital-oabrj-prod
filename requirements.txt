@@ -54,3 +54,5 @@ cffi==1.17.1
 pycparser==2.22
 colorama==0.4.6
 typing_extensions==4.14.1
+PyPDF2>=3.0.0
+
