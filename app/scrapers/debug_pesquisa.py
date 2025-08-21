@@ -1,75 +1,72 @@
-# app/scrapers/debug_pesquisa.py
+import os
+import time
+from pathlib import Path
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-import time
-from datetime import date
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-def debug_pesquisa():
+URL = "https://www3.tjrj.jus.br/consultadje/"
+OUTPUT_DIR = Path("/app/debug_screenshots")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def tirar_screenshot(driver, nome):
+    path = OUTPUT_DIR / f"{nome}.png"
+    driver.save_screenshot(str(path))
+    print(f"📸 Screenshot salva: {path}")
+
+def salvar_html(driver, nome):
+    path = OUTPUT_DIR / f"{nome}.html"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
+    print(f"📄 HTML salvo: {path}")
+
+def listar_iframes(driver):
+    iframes = driver.find_elements(By.TAG_NAME, "iframe")
+    print(f"🖼️ {len(iframes)} iframe(s) encontrados:")
+    for i, iframe in enumerate(iframes):
+        print(f"   [{i}] name={iframe.get_attribute('name')} id={iframe.get_attribute('id')} src={iframe.get_attribute('src')}")
+
+def main():
+    print("🌐 Acessando consultadje...")
+
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    
-    driver = webdriver.Chrome(options=chrome_options)
-    
+    chrome_options.add_argument("--window-size=1280,1024")
+
+    service = Service("/usr/bin/chromedriver")
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    driver.get(URL)
+    time.sleep(3)
+    tirar_screenshot(driver, "01_inicio")
+    salvar_html(driver, "01_inicio")
+    listar_iframes(driver)
+
     try:
-        print("🌐 Acessando consultadje...")
-        driver.get("https://www3.tjrj.jus.br/consultadje/")
-        time.sleep(5)
+        # tenta achar qualquer botão/aba com o texto "Pesquisa"
+        abas = driver.find_elements(By.XPATH, "//*[contains(text(), 'Pesquisa')]")
+        print(f"🔎 Encontradas {len(abas)} ocorrências de 'Pesquisa'")
+        for i, aba in enumerate(abas):
+            print(f"   [{i}] tag={aba.tag_name} id={aba.get_attribute('id')} class={aba.get_attribute('class')}")
         
-        print("📸 Tirando screenshot da página inicial...")
-        driver.save_screenshot("/tmp/consultadje_inicial.png")
-        
-        # Tenta encontrar a aba de pesquisa
-        try:
-            aba_pesquisa = driver.find_element(By.XPATH, "//a[@href='#pills-pesquisa']")
-            print("✅ Encontrou aba pesquisa")
-            aba_pesquisa.click()
-            time.sleep(2)
-        except:
-            print("❌ Não encontrou aba pesquisa")
-            return
-        
-        # Mostra todos os campos do formulário
-        print("\n📋 Campos do formulário encontrados:")
-        inputs = driver.find_elements(By.TAG_NAME, "input")
-        selects = driver.find_elements(By.TAG_NAME, "select")
-        buttons = driver.find_elements(By.TAG_NAME, "button")
-        
-        print(f"📝 Inputs: {len(inputs)}")
-        for i, inp in enumerate(inputs[:10]):
-            name = inp.get_attribute("name") or inp.get_attribute("id") or "sem-nome"
-            print(f"   {i+1}. {name}")
-        
-        print(f"📝 Selects: {len(selects)}")
-        print(f"📝 Buttons: {len(buttons)}")
-        for btn in buttons:
-            text = btn.text.strip()
-            if text:
-                print(f"   • {text}")
-        
-        # Tenta preencher data
-        hoje = date.today().strftime("%d/%m/%Y")
-        print(f"\n📅 Tentando preencher data: {hoje}")
-        
-        try:
-            data_inicial = driver.find_element(By.NAME, "dataInicial")
-            data_inicial.clear()
-            data_inicial.send_keys(hoje)
-            print("✅ Preencheu data inicial")
-        except:
-            print("❌ Não conseguiu preencher data inicial")
-        
-        # Screenshot do formulário
-        driver.save_screenshot("/tmp/consultadje_formulario.png")
-        print("📸 Screenshot do formulário: /tmp/consultadje_formulario.png")
-        
+        if abas:
+            print("👉 Tentando clicar na primeira ocorrência...")
+            driver.execute_script("arguments[0].click();", abas[0])
+            time.sleep(3)
+            tirar_screenshot(driver, "02_pos_clique")
+            salvar_html(driver, "02_pos_clique")
+        else:
+            print("❌ Nenhuma aba com texto 'Pesquisa' encontrada")
     except Exception as e:
-        print(f"❌ Erro: {e}")
-    finally:
-        driver.quit()
+        print(f"⚠️ Erro ao procurar/clicar na aba Pesquisa: {e}")
+
+    driver.quit()
+    print("✅ Debug finalizado")
 
 if __name__ == "__main__":
-    debug_pesquisa()
+    main()
