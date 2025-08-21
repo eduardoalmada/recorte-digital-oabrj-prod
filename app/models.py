@@ -1,52 +1,44 @@
-# app/models.py - VERSÃO CORRIGIDA
-from datetime import datetime
+from datetime import datetime, date
 from app import db
 
+# Mantém seu schema original para não quebrar nada já existente.
 class Advogado(db.Model):
-    __tablename__ = "advogados"
+    __tablename__ = 'advogado'
 
     id = db.Column(db.Integer, primary_key=True)
-    nome_completo = db.Column(db.String(255), nullable=False)  # Mudei de 'nome' para 'nome_completo'
-    numero_oab = db.Column(db.String(50), nullable=True)
-    telefone = db.Column(db.String(50), nullable=True)
-    email = db.Column(db.String(100), nullable=True)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    nome_completo = db.Column(db.String(255), nullable=False)
+    numero_oab = db.Column(db.String(20), nullable=False)
+    whatsapp = db.Column(db.String(20), nullable=True)
+    email = db.Column(db.String(255), nullable=True)
 
-    def __repr__(self):
-        return f"<Advogado {self.nome_completo}>"
+    publicacoes = db.relationship('Publicacao', backref='advogado', lazy=True)
 
-class DiarioOficial(db.Model):
-    __tablename__ = "diarios_oficiais"
-
-    id = db.Column(db.Integer, primary_key=True)
-    data_publicacao = db.Column(db.Date, nullable=False, unique=True, index=True)
-    fonte = db.Column(db.String(100), default="DJERJ")
-    arquivo_pdf = db.Column(db.String(500), nullable=False)  # Mudei de LargeBinary para String (URL)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # Relação com Publicacao
-    publicacoes = db.relationship('Publicacao', backref='diario', lazy=True)
-
-    def __repr__(self):
-        return f"<DiarioOficial {self.data_publicacao} - {self.fonte}>"
 
 class Publicacao(db.Model):
-    __tablename__ = "publicacoes"
+    __tablename__ = 'publicacao'
 
     id = db.Column(db.Integer, primary_key=True)
-    diario_id = db.Column(db.Integer, db.ForeignKey('diarios_oficiais.id'), nullable=False)
-    conteudo = db.Column(db.Text, nullable=False)
-    data_publicacao = db.Column(db.Date, nullable=False, index=True)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    advogado_id = db.Column(db.Integer, db.ForeignKey('advogado.id'), nullable=False)
+    titulo = db.Column(db.String(255), nullable=False)
+    descricao = db.Column(db.Text, nullable=True)
+    link = db.Column(db.String(500), nullable=False)  # guardamos a URL do PDF do DJERJ aqui
+    data = db.Column(db.Date, nullable=False, index=True)
+    notificado = db.Column(db.Boolean, default=False)
 
-    # Relação many-to-many com Advogado
-    advogados = db.relationship('Advogado', secondary='publicacao_advogado', backref='publicacoes')
+
+# Tabela nova e leve para controlar o "já processei o DO de hoje?"
+class DiarioOficial(db.Model):
+    __tablename__ = 'diarios_oficiais'
+
+    id = db.Column(db.Integer, primary_key=True)
+    fonte = db.Column(db.String(50), nullable=False, default='DJERJ', index=True)
+    data_publicacao = db.Column(db.Date, nullable=False, unique=True, index=True)
+    pdf_url = db.Column(db.String(500), nullable=False)  # apenas URL (rápido e escalável)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     def __repr__(self):
-        return f"<Publicacao {self.id} - {self.data_publicacao}>"
+        return f"<DiarioOficial {self.fonte} {self.data_publicacao}>"
 
-# Tabela de associação para many-to-many
-publicacao_advogado = db.Table('publicacao_advogado',
-    db.Column('publicacao_id', db.Integer, db.ForeignKey('publicacoes.id'), primary_key=True),
-    db.Column('advogado_id', db.Integer, db.ForeignKey('advogados.id'), primary_key=True)
-)
+
+# Índices úteis (opcional, caso use Alembic para criar depois)
+#   publicacao(data), diarios_oficiais(unique data_publicacao)
