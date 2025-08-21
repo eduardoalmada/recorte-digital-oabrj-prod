@@ -85,3 +85,11 @@ services:
         sync: false
       - key: IMPORT_KEY
         sync: false
+
+  - type: web
+    name: recorte-digital-oabrj
+    env: docker
+    buildCommand: |
+      pip install -r requirements.txt
+      flask db upgrade
+    startCommand: gunicorn main:app
