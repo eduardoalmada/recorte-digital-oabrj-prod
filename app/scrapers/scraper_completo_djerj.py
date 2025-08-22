@@ -11,8 +11,8 @@ from app import db
 from app.models import DiarioOficial
 from pdfminer.high_level import extract_text
 
-def encontrar_e_baixar_pdf(data):
-    """Encontra a URL do PDF e baixa diretamente"""
+def baixar_pdf_durante_sessao(data):
+    """Baixa o PDF durante a sessão do Selenium para evitar expiração"""
     print(f'🔍 Buscando PDF para {data.strftime("%d/%m/%Y")}...')
     
     chrome_options = Options()
@@ -30,90 +30,64 @@ def encontrar_e_baixar_pdf(data):
         # Esperar carregamento
         time.sleep(5)
         
-        # Estratégia 1: Analisar o HTML da página para encontrar a URL do PDF
-        page_source = driver.page_source
-        print('📄 Analisando código fonte da página...')
-        
-        # Procurar URLs de PDF no código fonte
-        pdf_urls = re.findall(r'https?://[^\s"]+\.pdf', page_source)
-        print(f'📦 URLs PDF encontradas: {len(pdf_urls)}')
-        for url in pdf_urls:
-            print(f'  → {url}')
-        
-        # Procurar por parâmetros filename no código fonte
-        filename_matches = re.findall(r'filename=([^&"\']+)', page_source)
-        print(f'📝 Filenames encontrados: {filename_matches}')
-        
-        # Se encontrou filenames, tentar construir a URL
-        if filename_matches:
-            for filename in filename_matches:
-                pdf_url = f'https://www3.tjrj.jus.br/consultadje/temp/{filename}'
-                print(f'🎯 Tentando URL: {pdf_url}')
-                
-                # Tentar baixar diretamente
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': 'application/pdf, */*',
-                    'Referer': 'https://www3.tjrj.jus.br/consultadje/'
-                }
-                
-                try:
-                    response = requests.get(pdf_url, headers=headers, timeout=15)
-                    if response.status_code == 200 and response.content.startswith(b'%PDF'):
-                        print('✅ PDF baixado com sucesso via URL direta!')
-                        return response.content
-                    else:
-                        print(f'❌ Falha no download: Status {response.status_code}')
-                except Exception as e:
-                    print(f'❌ Erro ao baixar: {e}')
-        
-        # Estratégia 2: Analisar iframes
-        print('🔍 Analisando iframes...')
+        # Analisar iframes
         iframes = driver.find_elements(By.TAG_NAME, 'iframe')
         
         for iframe in iframes:
             iframe_src = iframe.get_attribute('src') or ''
-            print(f'Iframe: {iframe_src}')
             
             # Se for o iframe do PDF, analisar seu conteúdo
             if 'pdf.aspx' in iframe_src:
                 try:
                     driver.switch_to.frame(iframe)
-                    time.sleep(2)
+                    time.sleep(3)
                     
                     # Analisar o HTML do iframe
                     iframe_html = driver.page_source
-                    print('📊 Analisando conteúdo do iframe...')
-                    
-                    # Procurar URLs de PDF no iframe
-                    iframe_pdf_urls = re.findall(r'https?://[^\s"]+\.pdf', iframe_html)
-                    print(f'📦 URLs PDF no iframe: {len(iframe_pdf_urls)}')
-                    for url in iframe_pdf_urls:
-                        print(f'  → {url}')
                     
                     # Procurar por filenames no iframe
                     iframe_filenames = re.findall(r'filename=([^&"\']+)', iframe_html)
-                    print(f'📝 Filenames no iframe: {iframe_filenames}')
+                    print(f'📝 Filenames encontrados: {iframe_filenames}')
                     
                     for filename in iframe_filenames:
-                        pdf_url = f'https://www3.tjrj.jus.br/consultadje/temp/{filename}'
-                        print(f'🎯 Tentando URL do iframe: {pdf_url}')
+                        # Corrigir filename se necessário
+                        if filename.startswith('/consultadje/temp/'):
+                            filename = filename.replace('/consultadje/temp/', '')
                         
-                        # Tentar baixar
+                        # Construir URL correta
+                        pdf_url = f'https://www3.tjrj.jus.br/consultadje/temp/{filename}'
+                        print(f'🎯 URL do PDF: {pdf_url}')
+                        
+                        # **BAIXAR DURANTE A SESSÃO** - usar os cookies do Selenium
+                        cookies = driver.get_cookies()
+                        session = requests.Session()
+                        
+                        # Transferir cookies do Selenium para requests
+                        for cookie in cookies:
+                            session.cookies.set(cookie['name'], cookie['value'])
+                        
                         headers = {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             'Accept': 'application/pdf, */*',
-                            'Referer': 'https://www3.tjrj.jus.br/consultadje/'
+                            'Referer': driver.current_url
                         }
                         
+                        # Baixar IMEDIATAMENTE
                         try:
-                            response = requests.get(pdf_url, headers=headers, timeout=15)
+                            response = session.get(pdf_url, headers=headers, timeout=15)
+                            print(f'📊 Status: {response.status_code}, Tamanho: {len(response.content)}')
+                            
                             if response.status_code == 200 and response.content.startswith(b'%PDF'):
-                                print('✅ PDF baixado do iframe!')
+                                print('✅ PDF baixado com sucesso durante a sessão!')
                                 driver.switch_to.default_content()
                                 return response.content
+                            else:
+                                print('❌ Resposta não é um PDF válido')
+                                # Debug: ver conteúdo da resposta
+                                print(f'Primeiros bytes: {response.content[:100]}')
+                                
                         except Exception as e:
-                            print(f'❌ Erro ao baixar do iframe: {e}')
+                            print(f'❌ Erro ao baixar: {e}')
                     
                     driver.switch_to.default_content()
                     
@@ -147,8 +121,8 @@ def executar_scraper_djerj():
         print(f'✅ DJERJ de {hoje.strftime("%d/%m/%Y")} já processado')
         return
     
-    # Encontrar e baixar PDF
-    pdf_content = encontrar_e_baixar_pdf(hoje)
+    # Baixar PDF durante a sessão
+    pdf_content = baixar_pdf_durante_sessao(hoje)
     
     if pdf_content:
         # Salvar temporariamente
@@ -164,6 +138,14 @@ def executar_scraper_djerj():
         texto = extrair_texto_pdf(caminho_pdf)
         
         if texto and len(texto.strip()) > 100:
+            # Verificar se contém o advogado
+            if 'PEDRO JOSÉ CARDOSO DOS SANTOS' in texto:
+                print('✅ Advogado encontrado no PDF!')
+            else:
+                print('🔍 Procurando por partes do nome...')
+                if 'PEDRO' in texto and 'JOSÉ' in texto and 'CARDOSO' in texto:
+                    print('✅ Partes do nome encontradas!')
+            
             # Contar publicações
             total_publicacoes = texto.count('Advogado') + texto.count('ADVOGADO')
             
@@ -185,7 +167,7 @@ def executar_scraper_djerj():
         os.remove(caminho_pdf)
         
     else:
-        print('❌ Falha ao encontrar e baixar PDF')
+        print('❌ Falha ao baixar PDF')
 
 if __name__ == '__main__':
     from app import create_app
