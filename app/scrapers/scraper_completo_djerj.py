@@ -13,8 +13,8 @@ from app import db
 from app.models import DiarioOficial
 from pdfminer.high_level import extract_text
 
-def baixar_pdf_clicando_botao(data):
-    """Clica no botão de download no visualizador de PDF para baixar o arquivo."""
+def baixar_pdf_com_javascript_direto(data):
+    """Usa JavaScript para acionar o download diretamente"""
     print(f'🔍 Iniciando download para {data.strftime("%d/%m/%Y")}...')
     
     chrome_options = Options()
@@ -38,57 +38,111 @@ def baixar_pdf_clicando_botao(data):
         url = f'https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={data.strftime("%d/%m/%Y")}&caderno=E&pagina=-1'
         driver.get(url)
         
-        wait = WebDriverWait(driver, 20)
+        # Esperar carregamento
+        time.sleep(5)
         
-        # Esperar até que o iframe do PDF seja visível
-        print('⏳ Esperando iframe do PDF...')
-        pdf_iframe = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'iframe[src*="pdf.aspx"]')))
-        print('✅ Iframe do PDF encontrado.')
-
+        # Localizar o iframe do PDF
+        iframes = driver.find_elements(By.TAG_NAME, 'iframe')
+        pdf_iframe = None
+        
+        for iframe in iframes:
+            src = iframe.get_attribute('src') or ''
+            if 'pdf.aspx' in src:
+                pdf_iframe = iframe
+                print(f'✅ Iframe do PDF encontrado: {src}')
+                break
+        
+        if not pdf_iframe:
+            print('❌ Iframe do PDF não encontrado')
+            return None
+        
         # Mudar para o iframe do PDF
         driver.switch_to.frame(pdf_iframe)
         print('✅ Entrou no iframe do PDF')
+        time.sleep(3)
         
-        # 1. Esperar e clicar no botão de "Tools" (ferramentas) para abrir a toolbar secundária
-        print('⏳ Esperando o botão de ferramentas...')
-        toolbar_toggle_button = wait.until(EC.element_to_be_clickable((By.ID, 'secondaryToolbarToggle')))
-        toolbar_toggle_button.click()
-        print('✅ Toolbar secundária aberta com sucesso.')
-
-        # 2. Esperar e clicar no botão de download que agora está visível
-        print('⏳ Esperando o botão de download...')
-        download_button = wait.until(EC.element_to_be_clickable((By.ID, 'secondaryDownload')))
-        print('✅ Botão de download encontrado!')
-        download_button.click()
-        print('🖱️ Clique no botão de download realizado!')
+        # ESTRATÉGIA DIRETA: Executar JavaScript para forçar o download
+        print('⚡ Executando JavaScript para download...')
+        
+        # Script JavaScript para acionar o download
+        js_script = """
+        // Função para acionar o download
+        function triggerDownload() {
+            // Tentativa 1: Usar PDFViewerApplication se disponível
+            if (typeof PDFViewerApplication !== 'undefined') {
+                PDFViewerApplication.download();
+                return 'Download acionado via PDFViewerApplication';
+            }
+            
+            // Tentativa 2: Procurar e clicar no botão de download
+            var downloadBtn = document.getElementById('secondaryDownload') || 
+                             document.getElementById('download') ||
+                             document.querySelector('button[title="Save"]') ||
+                             document.querySelector('button[data-l10n-id="save"]');
+            
+            if (downloadBtn) {
+                downloadBtn.click();
+                return 'Botão de download clicado';
+            }
+            
+            // Tentativa 3: Abrir toolbar secundária primeiro
+            var toolbarToggle = document.getElementById('secondaryToolbarToggle');
+            if (toolbarToggle) {
+                toolbarToggle.click();
+                
+                // Esperar um pouco e tentar clicar no download
+                setTimeout(function() {
+                    var downloadBtnAfter = document.getElementById('secondaryDownload');
+                    if (downloadBtnAfter) {
+                        downloadBtnAfter.click();
+                        return 'Toolbar aberta e download clicado';
+                    }
+                    return 'Toolbar aberta mas botão não encontrado';
+                }, 1000);
+            }
+            
+            return 'Nenhum método de download encontrado';
+        }
+        
+        return triggerDownload();
+        """
+        
+        # Executar o JavaScript
+        result = driver.execute_script(js_script)
+        print(f'✅ JavaScript executado: {result}')
+        
+        # Esperar o download
+        print('⏳ Aguardando download...')
+        time.sleep(10)
         
         # Voltar para o contexto principal
         driver.switch_to.default_content()
         
-        # Esperar que o download seja concluído (máximo de 60s)
-        tempo_inicio = time.time()
-        caminho_pdf_temporario = None
-        while time.time() - tempo_inicio < 60:
-            arquivos_baixados = glob.glob(os.path.join(download_dir, '*.pdf'))
-            if arquivos_baixados:
-                caminho_pdf_temporario = max(arquivos_baixados, key=os.path.getctime)
-                if os.path.getsize(caminho_pdf_temporario) > 0:
-                    print(f'✅ Download concluído: {os.path.basename(caminho_pdf_temporario)}')
-                    with open(caminho_pdf_temporario, 'rb') as f:
-                        pdf_content = f.read()
-                    
-                    if pdf_content.startswith(b'%PDF'):
-                        os.remove(caminho_pdf_temporario)
-                        return pdf_content
-                    else:
-                        print('❌ Arquivo baixado não é um PDF válido')
-                        os.remove(caminho_pdf_temporario)
-                        return None
-            time.sleep(1)
-
-        print('❌ Download do PDF falhou ou demorou demais.')
-        return None
-        
+        # Verificar se o arquivo foi baixado
+        downloads = glob.glob(os.path.join(download_dir, '*.pdf'))
+        if downloads:
+            # Encontrar o arquivo mais recente
+            latest_file = max(downloads, key=os.path.getctime)
+            print(f'✅ Arquivo baixado: {latest_file}')
+            
+            # Ler o conteúdo do arquivo
+            with open(latest_file, 'rb') as f:
+                pdf_content = f.read()
+            
+            # Verificar se é um PDF válido
+            if pdf_content.startswith(b'%PDF'):
+                print('✅ PDF válido baixado!')
+                # Limpar arquivo temporário
+                os.remove(latest_file)
+                return pdf_content
+            else:
+                print('❌ Arquivo baixado não é um PDF válido')
+                os.remove(latest_file)
+                return None
+        else:
+            print('❌ Nenhum arquivo PDF foi baixado')
+            return None
+            
     except Exception as e:
         print(f'❌ Erro durante o download: {e}')
         return None
@@ -113,8 +167,8 @@ def executar_scraper_djerj():
         print(f'✅ DJERJ de {hoje.strftime("%d/%m/%Y")} já processado')
         return
     
-    # Baixar PDF clicando no botão
-    pdf_content = baixar_pdf_clicando_botao(hoje)
+    # Baixar PDF usando JavaScript direto
+    pdf_content = baixar_pdf_com_javascript_direto(hoje)
     
     if pdf_content:
         # Salvar temporariamente
