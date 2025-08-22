@@ -64,95 +64,66 @@ def baixar_pdf_clicando_botao(data):
         # Esperar mais tempo para o PDF.js carregar completamente
         time.sleep(5)
         
-        # Estratégia 1: Tentar executar JavaScript para mostrar botões ocultos
-        print('🔄 Tentando mostrar botões ocultos...')
-        driver.execute_script("""
-            // Tentar mostrar botões ocultos
-            var hiddenButtons = document.querySelectorAll('.hiddenMediumView, .hiddenLargeView, [style*="display: none"]');
-            hiddenButtons.forEach(function(btn) {
-                btn.style.display = 'block';
-                btn.style.visibility = 'visible';
-            });
-            
-            // Tentar mostrar a toolbar secundária
-            var secondaryToolbar = document.getElementById('secondaryToolbar');
-            if (secondaryToolbar) {
-                secondaryToolbar.classList.remove('hidden');
-            }
-        """)
+        # ESTRATÉGIA DIRETA: CLICAR NO BOTÃO secondaryDownload QUE VOCÊ IDENTIFICOU!
+        print('🔍 Procurando botão secondaryDownload...')
         
-        time.sleep(2)
-        
-        # Estratégia 2: Procurar o botão de múltiplas formas
-        print('🔍 Procurando botão de download...')
-        
-        # Lista de seletores para tentar
-        selectors = [
-            '#download',  # Por ID
-            'button[title="Save"]',  # Por título
-            'button[data-l10n-id="save"]',  # Por data attribute
-            '.toolbarButton',  # Por classe
-            'button[onclick*="download"]',  # Por onclick
-        ]
-        
-        download_button = None
-        
-        for selector in selectors:
-            try:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                if elements:
-                    download_button = elements[0]
-                    print(f'✅ Botão encontrado por seletor: {selector}')
-                    break
-            except:
-                continue
-        
-        # Estratégia 3: Buscar por texto usando JavaScript
-        if not download_button:
-            print('🔍 Procurando botão por texto...')
-            try:
-                elements = driver.execute_script("""
-                    return Array.from(document.querySelectorAll('button')).filter(btn => 
-                        btn.textContent.includes('Save') || 
-                        btn.textContent.includes('Download') || 
-                        btn.textContent.includes('Salvar')
-                    );
-                """)
-                if elements and len(elements) > 0:
-                    download_button = elements[0]
-                    print(f'✅ Botão encontrado por texto: {download_button.text}')
-            except:
-                pass
-        
-        if not download_button:
-            print('❌ Botão de download não encontrado após todas as tentativas')
-            print('📋 Debug: Listando todos os botões disponíveis...')
-            
-            # Listar todos os botões para debug
-            all_buttons = driver.find_elements(By.TAG_NAME, 'button')
-            print(f'Total de botões: {len(all_buttons)}')
-            for i, btn in enumerate(all_buttons):
-                print(f'Botão {i+1}: Texto="{btn.text}", ID="{btn.get_attribute("id")}", Classe="{btn.get_attribute("class")}"')
-            
-            return None
-        
-        # Estratégia 4: Clicar via JavaScript se necessário
-        print('🖱️  Tentando clicar no botão...')
         try:
-            # Primeiro tentar clicar normalmente
-            download_button.click()
-            print('✅ Clique normal realizado')
+            # Tentar encontrar o botão pelo ID exato
+            download_button = driver.find_element(By.ID, 'secondaryDownload')
+            print('✅ Botão secondaryDownload encontrado!')
+            
         except:
+            print('❌ Botão secondaryDownload não encontrado pelo ID')
+            
+            # Tentar alternativas
             try:
-                # Se falhar, tentar via JavaScript
-                driver.execute_script("arguments[0].click();", download_button)
-                print('✅ Clique via JavaScript realizado')
-            except Exception as e:
-                print(f'❌ Erro ao clicar: {e}')
+                download_button = driver.find_element(By.CSS_SELECTOR, 'button[title="Save"]')
+                print('✅ Botão encontrado pelo título "Save"')
+            except:
+                try:
+                    download_button = driver.find_element(By.CSS_SELECTOR, '.secondaryToolbarButton')
+                    print('✅ Botão encontrado pela classe secondaryToolbarButton')
+                except:
+                    print('❌ Nenhum botão de download encontrado')
+                    return None
+        
+        # Primeiro: abrir a toolbar secundária se necessário
+        print('🚀 Abrindo toolbar secundária...')
+        try:
+            # Procurar botão para abrir toolbar secundária
+            toolbar_toggle = driver.find_element(By.ID, 'secondaryToolbarToggle')
+            driver.execute_script("arguments[0].click();", toolbar_toggle)
+            print('✅ Toolbar secundária aberta')
+            time.sleep(2)
+        except:
+            print('⚠️  Não foi possível abrir toolbar secundária, tentando diretamente...')
+        
+        # Clicar no botão de download
+        print('🖱️  Clicando no botão de download...')
+        try:
+            # Usar JavaScript para garantir o clique
+            driver.execute_script("arguments[0].click();", download_button)
+            print('✅ Clique no botão de download realizado!')
+        except Exception as e:
+            print(f'❌ Erro ao clicar: {e}')
+            
+            # Tentar método alternativo: simular evento de clique
+            try:
+                driver.execute_script("""
+                    var event = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    arguments[0].dispatchEvent(event);
+                """, download_button)
+                print('✅ Clique alternativo realizado!')
+            except:
+                print('❌ Falha em todos os métodos de clique')
                 return None
         
         print('⏳ Aguardando download...')
-        time.sleep(8)  # Esperar mais tempo para download
+        time.sleep(10)  # Esperar o download
         
         # Voltar para o contexto principal
         driver.switch_to.default_content()
@@ -176,10 +147,14 @@ def baixar_pdf_clicando_botao(data):
                 return pdf_content
             else:
                 print('❌ Arquivo baixado não é um PDF válido')
+                print('Primeiros bytes:', pdf_content[:20])
                 os.remove(latest_file)
                 return None
         else:
             print('❌ Nenhum arquivo PDF foi baixado')
+            # Listar arquivos em /tmp para debug
+            all_files = glob.glob('/tmp/*')
+            print(f'Arquivos em /tmp: {all_files}')
             return None
             
     except Exception as e:
