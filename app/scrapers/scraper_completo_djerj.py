@@ -1,4 +1,4 @@
-# app/scrapers/scraper_djerj_dinamico.py
+# app/scrapers/scraper_completo_djerj.py
 import requests
 from datetime import datetime
 from selenium import webdriver
@@ -9,13 +9,14 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 import os
 import re
+import glob
 from app import db
 from app.models import DiarioOficial
 from pdfminer.high_level import extract_text
 
-def encontrar_url_pdf_diaria(data):
-    """Encontra a URL do PDF do dia usando Selenium"""
-    print(f'🔍 Buscando PDF para {data.strftime("%d/%m/%Y")}...')
+def baixar_pdf_diretamente_selenium(data):
+    """Usa Selenium para encontrar e baixar o PDF diretamente"""
+    print(f'🔍 Buscando e baixando PDF para {data.strftime("%d/%m/%Y")}...')
     
     chrome_options = Options()
     chrome_options.add_argument('--headless')
@@ -23,93 +24,80 @@ def encontrar_url_pdf_diaria(data):
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--window-size=1920,1080')
     
+    # Configurar download automático
+    chrome_options.add_experimental_option('prefs', {
+        'download.default_directory': '/tmp',
+        'download.prompt_for_download': False,
+        'download.directory_upgrade': True,
+        'safebrowsing.enabled': True
+    })
+    
     driver = webdriver.Chrome(options=chrome_options)
     
     try:
-        # Acessar a página principal com a data específica
         url = f'https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={data.strftime("%d/%m/%Y")}&caderno=E&pagina=-1'
         driver.get(url)
         
-        # Esperar o carregamento (usando wait explícito)
-        wait = WebDriverWait(driver, 15)
+        # Esperar carregamento
+        time.sleep(5)
         
-        # Esperar até que os iframes estejam carregados
-        wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "iframe")))
-        time.sleep(3)  # Espera adicional para garantir carregamento completo
+        # Procurar o link de download direto dentro da página
+        links = driver.find_elements(By.XPATH, '//a[contains(@href, ".pdf")] | //button[contains(@onclick, ".pdf")]')
+        print(f'Links PDF encontrados: {len(links)}')
         
-        # Procurar o iframe do PDF
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        pdf_iframe = None
+        for link in links:
+            href = link.get_attribute('href') or ''
+            onclick = link.get_attribute('onclick') or ''
+            print(f'Link: {href}, OnClick: {onclick[:100]}...')
         
+        # Alternativa: tentar encontrar o iframe e interagir com ele
+        iframes = driver.find_elements(By.TAG_NAME, 'iframe')
         for iframe in iframes:
             src = iframe.get_attribute('src') or ''
-            if 'pdf.aspx' in src:
-                pdf_iframe = iframe
-                break
+            if 'pdf' in src.lower():
+                print(f'Iframe PDF: {src}')
+                
+                # Mudar para o iframe
+                driver.switch_to.frame(iframe)
+                time.sleep(2)
+                
+                # Procurar botão de download dentro do iframe
+                download_buttons = driver.find_elements(By.XPATH, '//*[contains(text(), "Download")] | //*[contains(@title, "Download")] | //*[contains(@class, "download")]')
+                print(f'Botões download no iframe: {len(download_buttons)}')
+                
+                for btn in download_buttons:
+                    print(f'Botão: {btn.text}, Title: {btn.get_attribute("title")}')
+                    try:
+                        btn.click()
+                        print('✅ Clicou no botão de download!')
+                        time.sleep(5)
+                        break
+                    except:
+                        continue
+                
+                driver.switch_to.default_content()
         
-        if not pdf_iframe:
-            print('❌ Iframe do PDF não encontrado')
-            return None
-        
-        # Mudar para o iframe do PDF
-        driver.switch_to.frame(pdf_iframe)
-        time.sleep(2)
-        
-        # Procurar a URL do PDF dentro do iframe
-        pdf_elements = driver.find_elements(By.XPATH, '//*[@src] | //*[@href] | //*[contains(@src, ".pdf")] | //*[contains(@href, ".pdf")]')
-        
-        pdf_url = None
-        for element in pdf_elements:
-            src = element.get_attribute('src') or ''
-            href = element.get_attribute('href') or ''
+        # Verificar se algum arquivo foi baixado
+        downloads = glob.glob('/tmp/*.pdf')
+        if downloads:
+            print(f'📁 Arquivos baixados: {downloads}')
+            # Ler o arquivo baixado mais recente
+            latest_file = max(downloads, key=os.path.getctime)
+            with open(latest_file, 'rb') as f:
+                pdf_content = f.read()
             
-            # Verificar se é um link de PDF
-            for link in [src, href]:
-                if link and '.pdf' in link.lower() and 'filename=' in link:
-                    # Extrair a parte do filename
-                    pdf_filename = link.split('filename=')[1]
-                    pdf_direct_url = f'https://www3.tjrj.jus.br/consultadje/temp/{pdf_filename}'
-                    pdf_url = pdf_direct_url
-                    break
-            
-            if pdf_url:
-                break
-        
-        driver.switch_to.default_content()
-        
-        if pdf_url:
-            print(f'✅ URL do PDF encontrada: {pdf_url}')
-            return pdf_url
+            # Limpar arquivo temporário
+            os.remove(latest_file)
+            return pdf_content
         else:
-            print('❌ URL do PDF não encontrada no iframe')
+            print('❌ Nenhum arquivo PDF foi baixado')
             return None
             
     except Exception as e:
-        print(f'❌ Erro ao buscar URL do PDF: {e}')
+        print(f'❌ Erro no Selenium: {e}')
         return None
     finally:
         driver.quit()
-
-def baixar_pdf(url):
-    """Baixa o PDF da URL fornecida"""
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/pdf, */*',
-        'Referer': 'https://www3.tjrj.jus.br/consultadje/'
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=60)
-        
-        if response.status_code == 200 and 'pdf' in response.headers.get('content-type', '').lower():
-            return response.content
-        else:
-            print(f'❌ Falha no download: Status {response.status_code}, Content-Type: {response.headers.get("content-type")}')
-            return None
-            
-    except Exception as e:
-        print(f'❌ Erro ao baixar PDF: {e}')
-        return None
 
 def extrair_texto_pdf(caminho_pdf):
     """Extrai texto do PDF"""
@@ -129,15 +117,8 @@ def executar_scraper_djerj():
         print(f'✅ DJERJ de {hoje.strftime("%d/%m/%Y")} já processado')
         return
     
-    # Encontrar URL do PDF do dia
-    pdf_url = encontrar_url_pdf_diaria(hoje)
-    
-    if not pdf_url:
-        print('❌ Não foi possível encontrar o PDF do dia')
-        return
-    
-    # Baixar PDF
-    pdf_content = baixar_pdf(pdf_url)
+    # Baixar PDF diretamente usando Selenium
+    pdf_content = baixar_pdf_diretamente_selenium(hoje)
     
     if pdf_content:
         # Salvar temporariamente
@@ -181,4 +162,7 @@ def executar_scraper_djerj():
         print('❌ Falha ao baixar PDF')
 
 if __name__ == '__main__':
-    executar_scraper_djerj()
+    from app import create_app
+    app = create_app()
+    with app.app_context():
+        executar_scraper_djerj()
