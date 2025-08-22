@@ -16,7 +16,7 @@ class DiarioOficial(db.Model):
     __tablename__ = "diario_oficial"  # singular para consistência
 
     id = db.Column(db.Integer, primary_key=True)
-    data = db.Column(db.Date, nullable=False, unique=True, index=True)  # data única
+    data_publicacao = db.Column(db.Date, nullable=False, unique=True, index=True)  # data única
     fonte = db.Column(db.String(100), default="DJERJ", nullable=False)
     total_publicacoes = db.Column(db.Integer, default=0)
     arquivo_pdf = db.Column(db.Text, nullable=True)  # link ou base64/pdf
