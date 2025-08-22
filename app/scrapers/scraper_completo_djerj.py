@@ -8,15 +8,14 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import os
-import re
 import glob
 from app import db
 from app.models import DiarioOficial
 from pdfminer.high_level import extract_text
 
-def baixar_pdf_diretamente_selenium(data):
-    """Usa Selenium para encontrar e baixar o PDF diretamente"""
-    print(f'🔍 Buscando e baixando PDF para {data.strftime("%d/%m/%Y")}...')
+def baixar_pdf_clicando_botao(data):
+    """Clica no botão de download do visualizador de PDF"""
+    print(f'🔍 Iniciando download para {data.strftime("%d/%m/%Y")}...')
     
     chrome_options = Options()
     chrome_options.add_argument('--headless')
@@ -41,60 +40,74 @@ def baixar_pdf_diretamente_selenium(data):
         # Esperar carregamento
         time.sleep(5)
         
-        # Procurar o link de download direto dentro da página
-        links = driver.find_elements(By.XPATH, '//a[contains(@href, ".pdf")] | //button[contains(@onclick, ".pdf")]')
-        print(f'Links PDF encontrados: {len(links)}')
-        
-        for link in links:
-            href = link.get_attribute('href') or ''
-            onclick = link.get_attribute('onclick') or ''
-            print(f'Link: {href}, OnClick: {onclick[:100]}...')
-        
-        # Alternativa: tentar encontrar o iframe e interagir com ele
+        # Localizar o iframe do PDF
         iframes = driver.find_elements(By.TAG_NAME, 'iframe')
+        pdf_iframe = None
+        
         for iframe in iframes:
             src = iframe.get_attribute('src') or ''
-            if 'pdf' in src.lower():
-                print(f'Iframe PDF: {src}')
-                
-                # Mudar para o iframe
-                driver.switch_to.frame(iframe)
-                time.sleep(2)
-                
-                # Procurar botão de download dentro do iframe
-                download_buttons = driver.find_elements(By.XPATH, '//*[contains(text(), "Download")] | //*[contains(@title, "Download")] | //*[contains(@class, "download")]')
-                print(f'Botões download no iframe: {len(download_buttons)}')
-                
-                for btn in download_buttons:
-                    print(f'Botão: {btn.text}, Title: {btn.get_attribute("title")}')
-                    try:
-                        btn.click()
-                        print('✅ Clicou no botão de download!')
-                        time.sleep(5)
-                        break
-                    except:
-                        continue
-                
-                driver.switch_to.default_content()
+            if 'pdf.aspx' in src:
+                pdf_iframe = iframe
+                print(f'✅ Iframe do PDF encontrado: {src}')
+                break
         
-        # Verificar se algum arquivo foi baixado
+        if not pdf_iframe:
+            print('❌ Iframe do PDF não encontrado')
+            return None
+        
+        # Mudar para o iframe do PDF
+        driver.switch_to.frame(pdf_iframe)
+        print('✅ Entrou no iframe do PDF')
+        time.sleep(3)
+        
+        # AGORA CLICAR NO BOTÃO DE DOWNLOAD QUE VOCÊ IDENTIFICOU!
+        try:
+            # Tentar encontrar o botão pelo ID
+            download_button = driver.find_element(By.ID, 'download')
+            print('✅ Botão de download encontrado pelo ID!')
+        except:
+            try:
+                # Tentar encontrar pelo título
+                download_button = driver.find_element(By.XPATH, '//button[@title="Save"]')
+                print('✅ Botão de download encontrado pelo título!')
+            except:
+                try:
+                    # Tentar encontrar pela classe
+                    download_button = driver.find_element(By.CLASS_NAME, 'toolbarButton')
+                    print('✅ Botão de download encontrado pela classe!')
+                except:
+                    print('❌ Botão de download não encontrado')
+                    return None
+        
+        # Clicar no botão de download
+        print('🖱️  Clicando no botão de download...')
+        download_button.click()
+        time.sleep(5)  # Esperar o download
+        
+        # Voltar para o contexto principal
+        driver.switch_to.default_content()
+        
+        # Verificar se o arquivo foi baixado
         downloads = glob.glob('/tmp/*.pdf')
         if downloads:
-            print(f'📁 Arquivos baixados: {downloads}')
-            # Ler o arquivo baixado mais recente
+            # Encontrar o arquivo mais recente
             latest_file = max(downloads, key=os.path.getctime)
+            print(f'✅ Arquivo baixado: {latest_file}')
+            
+            # Ler o conteúdo do arquivo
             with open(latest_file, 'rb') as f:
                 pdf_content = f.read()
             
             # Limpar arquivo temporário
             os.remove(latest_file)
+            
             return pdf_content
         else:
             print('❌ Nenhum arquivo PDF foi baixado')
             return None
             
     except Exception as e:
-        print(f'❌ Erro no Selenium: {e}')
+        print(f'❌ Erro durante o download: {e}')
         return None
     finally:
         driver.quit()
@@ -117,8 +130,8 @@ def executar_scraper_djerj():
         print(f'✅ DJERJ de {hoje.strftime("%d/%m/%Y")} já processado')
         return
     
-    # Baixar PDF diretamente usando Selenium
-    pdf_content = baixar_pdf_diretamente_selenium(hoje)
+    # Baixar PDF clicando no botão
+    pdf_content = baixar_pdf_clicando_botao(hoje)
     
     if pdf_content:
         # Salvar temporariamente
@@ -128,32 +141,28 @@ def executar_scraper_djerj():
         with open(caminho_pdf, 'wb') as f:
             f.write(pdf_content)
         
-        print(f'✅ PDF baixado: {len(pdf_content)} bytes')
+        print(f'✅ PDF baixado com sucesso! Tamanho: {len(pdf_content)} bytes')
         
         # Extrair texto
         texto = extrair_texto_pdf(caminho_pdf)
         
-        if texto:
-            # Verificar se contém conteúdo relevante
-            if len(texto.strip()) > 100:
-                # Contar publicações
-                total_publicacoes = texto.count('Advogado') + texto.count('ADVOGADO')
-                
-                novo_diario = DiarioOficial(
-                    data_publicacao=hoje,
-                    fonte='DJERJ',
-                    total_publicacoes=total_publicacoes,
-                    arquivo_pdf=caminho_pdf
-                )
-                
-                db.session.add(novo_diario)
-                db.session.commit()
-                
-                print(f'✅ Diário salvo com {total_publicacoes} publicações')
-            else:
-                print('❌ PDF vazio ou com pouco texto')
+        if texto and len(texto.strip()) > 100:
+            # Contar publicações
+            total_publicacoes = texto.count('Advogado') + texto.count('ADVOGADO')
+            
+            novo_diario = DiarioOficial(
+                data_publicacao=hoje,
+                fonte='DJERJ',
+                total_publicacoes=total_publicacoes,
+                arquivo_pdf=caminho_pdf
+            )
+            
+            db.session.add(novo_diario)
+            db.session.commit()
+            
+            print(f'✅ Diário salvo com {total_publicacoes} publicações')
         else:
-            print('❌ Não foi possível extrair texto do PDF')
+            print('❌ Problema com o texto extraído')
         
         # Limpar arquivo
         os.remove(caminho_pdf)
