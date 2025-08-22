@@ -14,7 +14,7 @@ from app.models import DiarioOficial
 from pdfminer.high_level import extract_text
 
 def baixar_pdf_clicando_botao(data):
-    """Clica no botão de download do visualizador de PDF"""
+    """Clica no botão de download no visualizador de PDF para baixar o arquivo."""
     print(f'🔍 Iniciando download para {data.strftime("%d/%m/%Y")}...')
     
     chrome_options = Options()
@@ -24,8 +24,9 @@ def baixar_pdf_clicando_botao(data):
     chrome_options.add_argument('--window-size=1920,1080')
     
     # Configurar download automático
+    download_dir = '/tmp'
     chrome_options.add_experimental_option('prefs', {
-        'download.default_directory': '/tmp',
+        'download.default_directory': download_dir,
         'download.prompt_for_download': False,
         'download.directory_upgrade': True,
         'safebrowsing.enabled': True
@@ -37,126 +38,57 @@ def baixar_pdf_clicando_botao(data):
         url = f'https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={data.strftime("%d/%m/%Y")}&caderno=E&pagina=-1'
         driver.get(url)
         
-        # Esperar carregamento com wait explícito
-        wait = WebDriverWait(driver, 15)
-        wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "iframe")))
-        time.sleep(3)
+        wait = WebDriverWait(driver, 20)
         
-        # Localizar o iframe do PDF
-        iframes = driver.find_elements(By.TAG_NAME, 'iframe')
-        pdf_iframe = None
-        
-        for iframe in iframes:
-            src = iframe.get_attribute('src') or ''
-            if 'pdf.aspx' in src:
-                pdf_iframe = iframe
-                print(f'✅ Iframe do PDF encontrado: {src}')
-                break
-        
-        if not pdf_iframe:
-            print('❌ Iframe do PDF não encontrado')
-            return None
-        
+        # Esperar até que o iframe do PDF seja visível
+        print('⏳ Esperando iframe do PDF...')
+        pdf_iframe = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'iframe[src*="pdf.aspx"]')))
+        print('✅ Iframe do PDF encontrado.')
+
         # Mudar para o iframe do PDF
         driver.switch_to.frame(pdf_iframe)
         print('✅ Entrou no iframe do PDF')
         
-        # Esperar mais tempo para o PDF.js carregar completamente
-        time.sleep(5)
-        
-        # ESTRATÉGIA DIRETA: CLICAR NO BOTÃO secondaryDownload QUE VOCÊ IDENTIFICOU!
-        print('🔍 Procurando botão secondaryDownload...')
-        
-        try:
-            # Tentar encontrar o botão pelo ID exato
-            download_button = driver.find_element(By.ID, 'secondaryDownload')
-            print('✅ Botão secondaryDownload encontrado!')
-            
-        except:
-            print('❌ Botão secondaryDownload não encontrado pelo ID')
-            
-            # Tentar alternativas
-            try:
-                download_button = driver.find_element(By.CSS_SELECTOR, 'button[title="Save"]')
-                print('✅ Botão encontrado pelo título "Save"')
-            except:
-                try:
-                    download_button = driver.find_element(By.CSS_SELECTOR, '.secondaryToolbarButton')
-                    print('✅ Botão encontrado pela classe secondaryToolbarButton')
-                except:
-                    print('❌ Nenhum botão de download encontrado')
-                    return None
-        
-        # Primeiro: abrir a toolbar secundária se necessário
-        print('🚀 Abrindo toolbar secundária...')
-        try:
-            # Procurar botão para abrir toolbar secundária
-            toolbar_toggle = driver.find_element(By.ID, 'secondaryToolbarToggle')
-            driver.execute_script("arguments[0].click();", toolbar_toggle)
-            print('✅ Toolbar secundária aberta')
-            time.sleep(2)
-        except:
-            print('⚠️  Não foi possível abrir toolbar secundária, tentando diretamente...')
-        
-        # Clicar no botão de download
-        print('🖱️  Clicando no botão de download...')
-        try:
-            # Usar JavaScript para garantir o clique
-            driver.execute_script("arguments[0].click();", download_button)
-            print('✅ Clique no botão de download realizado!')
-        except Exception as e:
-            print(f'❌ Erro ao clicar: {e}')
-            
-            # Tentar método alternativo: simular evento de clique
-            try:
-                driver.execute_script("""
-                    var event = new MouseEvent('click', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    arguments[0].dispatchEvent(event);
-                """, download_button)
-                print('✅ Clique alternativo realizado!')
-            except:
-                print('❌ Falha em todos os métodos de clique')
-                return None
-        
-        print('⏳ Aguardando download...')
-        time.sleep(10)  # Esperar o download
+        # 1. Esperar e clicar no botão de "Tools" (ferramentas) para abrir a toolbar secundária
+        print('⏳ Esperando o botão de ferramentas...')
+        toolbar_toggle_button = wait.until(EC.element_to_be_clickable((By.ID, 'secondaryToolbarToggle')))
+        toolbar_toggle_button.click()
+        print('✅ Toolbar secundária aberta com sucesso.')
+
+        # 2. Esperar e clicar no botão de download que agora está visível
+        print('⏳ Esperando o botão de download...')
+        download_button = wait.until(EC.element_to_be_clickable((By.ID, 'secondaryDownload')))
+        print('✅ Botão de download encontrado!')
+        download_button.click()
+        print('🖱️ Clique no botão de download realizado!')
         
         # Voltar para o contexto principal
         driver.switch_to.default_content()
         
-        # Verificar se o arquivo foi baixado
-        downloads = glob.glob('/tmp/*.pdf')
-        if downloads:
-            # Encontrar o arquivo mais recente
-            latest_file = max(downloads, key=os.path.getctime)
-            print(f'✅ Arquivo baixado: {latest_file}')
-            
-            # Ler o conteúdo do arquivo
-            with open(latest_file, 'rb') as f:
-                pdf_content = f.read()
-            
-            # Verificar se é um PDF válido
-            if pdf_content.startswith(b'%PDF'):
-                print('✅ PDF válido baixado!')
-                # Limpar arquivo temporário
-                os.remove(latest_file)
-                return pdf_content
-            else:
-                print('❌ Arquivo baixado não é um PDF válido')
-                print('Primeiros bytes:', pdf_content[:20])
-                os.remove(latest_file)
-                return None
-        else:
-            print('❌ Nenhum arquivo PDF foi baixado')
-            # Listar arquivos em /tmp para debug
-            all_files = glob.glob('/tmp/*')
-            print(f'Arquivos em /tmp: {all_files}')
-            return None
-            
+        # Esperar que o download seja concluído (máximo de 60s)
+        tempo_inicio = time.time()
+        caminho_pdf_temporario = None
+        while time.time() - tempo_inicio < 60:
+            arquivos_baixados = glob.glob(os.path.join(download_dir, '*.pdf'))
+            if arquivos_baixados:
+                caminho_pdf_temporario = max(arquivos_baixados, key=os.path.getctime)
+                if os.path.getsize(caminho_pdf_temporario) > 0:
+                    print(f'✅ Download concluído: {os.path.basename(caminho_pdf_temporario)}')
+                    with open(caminho_pdf_temporario, 'rb') as f:
+                        pdf_content = f.read()
+                    
+                    if pdf_content.startswith(b'%PDF'):
+                        os.remove(caminho_pdf_temporario)
+                        return pdf_content
+                    else:
+                        print('❌ Arquivo baixado não é um PDF válido')
+                        os.remove(caminho_pdf_temporario)
+                        return None
+            time.sleep(1)
+
+        print('❌ Download do PDF falhou ou demorou demais.')
+        return None
+        
     except Exception as e:
         print(f'❌ Erro durante o download: {e}')
         return None
