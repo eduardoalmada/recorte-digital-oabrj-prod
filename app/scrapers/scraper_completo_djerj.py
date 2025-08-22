@@ -1,126 +1,184 @@
+# app/scrapers/scraper_djerj_dinamico.py
 import requests
 from datetime import datetime
-import re
-from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
+import os
+import re
+from app import db
+from app.models import DiarioOficial
+from pdfminer.high_level import extract_text
 
-def baixar_pdf_djerj_completo(data):
-    """
-    Fluxo completo:
-    1. Acessa a página inicial
-    2. Clica no botão "Visualizar a Íntegra"
-    3. Acessa a página com o iframe do PDF
-    4. Extrai a URL do PDF do iframe
-    5. Baixa o PDF
-    """
+def encontrar_url_pdf_diaria(data):
+    """Encontra a URL do PDF do dia usando Selenium"""
+    print(f'🔍 Buscando PDF para {data.strftime("%d/%m/%Y")}...')
     
-    # Headers para simular navegador
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'pt-BR,pt;q=0.8,en-US;q=0.5,en;q=0.3',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-    }
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--window-size=1920,1080')
     
-    # Criar sessão para manter cookies
-    session = requests.Session()
+    driver = webdriver.Chrome(options=chrome_options)
     
     try:
-        # 1. Acessar página inicial
-        print("🌐 Acessando página inicial...")
-        url_inicial = "https://www3.tjrj.jus.br/consultadje/"
-        response_inicial = session.get(url_inicial, headers=headers, timeout=30)
-        response_inicial.raise_for_status()
+        # Acessar a página principal com a data específica
+        url = f'https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={data.strftime("%d/%m/%Y")}&caderno=E&pagina=-1'
+        driver.get(url)
         
-        # 2. Extrair ViewState e outros campos do formulário
-        soup = BeautifulSoup(response_inicial.text, 'html.parser')
-        viewstate = soup.find('input', {'name': '__VIEWSTATE'})['value'] if soup.find('input', {'name': '__VIEWSTATE'}) else ''
-        viewstate_generator = soup.find('input', {'name': '__VIEWSTATEGENERATOR'})['value'] if soup.find('input', {'name': '__VIEWSTATEGENERATOR'}) else ''
-        event_validation = soup.find('input', {'name': '__EVENTVALIDATION'})['value'] if soup.find('input', {'name': '__EVENTVALIDATION'}) else ''
+        # Esperar o carregamento (usando wait explícito)
+        wait = WebDriverWait(driver, 15)
         
-        # 3. Simular clique no botão "Visualizar a Íntegra"
-        print("🖱️  Simulando clique no botão...")
-        url_post = "https://www3.tjrj.jus.br/consultadje/"
+        # Esperar até que os iframes estejam carregados
+        wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "iframe")))
+        time.sleep(3)  # Espera adicional para garantir carregamento completo
         
-        data_post = {
-            '__VIEWSTATE': viewstate,
-            '__VIEWSTATEGENERATOR': viewstate_generator,
-            '__EVENTVALIDATION': event_validation,
-            'ctl00$ContentPlaceHolder1$btnVisIntegra': 'Visualizar a Íntegra Do Caderno V - Editais e demais publicações'
-        }
+        # Procurar o iframe do PDF
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        pdf_iframe = None
         
-        response_post = session.post(url_post, data=data_post, headers=headers, timeout=30)
-        response_post.raise_for_status()
+        for iframe in iframes:
+            src = iframe.get_attribute('src') or ''
+            if 'pdf.aspx' in src:
+                pdf_iframe = iframe
+                break
         
-        # 4. Extrair URL do iframe do PDF
-        print("🔍 Procurando iframe do PDF...")
-        iframe_pattern = r'<iframe[^>]+src="([^"]+)"'
-        iframe_match = re.search(iframe_pattern, response_post.text)
+        if not pdf_iframe:
+            print('❌ Iframe do PDF não encontrado')
+            return None
         
-        if iframe_match:
-            iframe_url = iframe_match.group(1)
-            print(f"📄 Iframe encontrado: {iframe_url}")
+        # Mudar para o iframe do PDF
+        driver.switch_to.frame(pdf_iframe)
+        time.sleep(2)
+        
+        # Procurar a URL do PDF dentro do iframe
+        pdf_elements = driver.find_elements(By.XPATH, '//*[@src] | //*[@href] | //*[contains(@src, ".pdf")] | //*[contains(@href, ".pdf")]')
+        
+        pdf_url = None
+        for element in pdf_elements:
+            src = element.get_attribute('src') or ''
+            href = element.get_attribute('href') or ''
             
-            # 5. Extrair nome do arquivo PDF
-            if 'filename=' in iframe_url:
-                pdf_filename = iframe_url.split('filename=')[1]
-                pdf_direct_url = f"https://www3.tjrj.jus.br/consultadje/temp/{pdf_filename}"
-                
-                print(f"⬇️  Baixando PDF: {pdf_direct_url}")
-                
-                # 6. Baixar o PDF
-                pdf_response = session.get(pdf_direct_url, headers=headers, timeout=60)
-                pdf_response.raise_for_status()
-                
-                return pdf_response.content
-            else:
-                print("❌ Nome do arquivo PDF não encontrado no iframe")
-                return None
+            # Verificar se é um link de PDF
+            for link in [src, href]:
+                if link and '.pdf' in link.lower() and 'filename=' in link:
+                    # Extrair a parte do filename
+                    pdf_filename = link.split('filename=')[1]
+                    pdf_direct_url = f'https://www3.tjrj.jus.br/consultadje/temp/{pdf_filename}'
+                    pdf_url = pdf_direct_url
+                    break
+            
+            if pdf_url:
+                break
+        
+        driver.switch_to.default_content()
+        
+        if pdf_url:
+            print(f'✅ URL do PDF encontrada: {pdf_url}')
+            return pdf_url
         else:
-            print("❌ Iframe do PDF não encontrado")
+            print('❌ URL do PDF não encontrada no iframe')
             return None
             
     except Exception as e:
-        print(f"❌ Erro no processo: {e}")
+        print(f'❌ Erro ao buscar URL do PDF: {e}')
+        return None
+    finally:
+        driver.quit()
+
+def baixar_pdf(url):
+    """Baixa o PDF da URL fornecida"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/pdf, */*',
+        'Referer': 'https://www3.tjrj.jus.br/consultadje/'
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=60)
+        
+        if response.status_code == 200 and 'pdf' in response.headers.get('content-type', '').lower():
+            return response.content
+        else:
+            print(f'❌ Falha no download: Status {response.status_code}, Content-Type: {response.headers.get("content-type")}')
+            return None
+            
+    except Exception as e:
+        print(f'❌ Erro ao baixar PDF: {e}')
         return None
 
-# Função para usar no seu scraper principal
-def executar_scraper_atualizado():
+def extrair_texto_pdf(caminho_pdf):
+    """Extrai texto do PDF"""
+    try:
+        return extract_text(caminho_pdf)
+    except Exception as e:
+        print(f'❌ Erro ao extrair texto: {e}')
+        return ""
+
+def executar_scraper_djerj():
     hoje = datetime.now().date()
     
-    print(f"📅 Verificando Diário Oficial de {hoje.strftime('%d/%m/%Y')}")
+    print(f'📅 Verificando DJERJ de {hoje.strftime("%d/%m/%Y")}')
     
-    # Verificar se já foi processado hoje
+    # Verificar se já foi processado
     if DiarioOficial.query.filter_by(data_publicacao=hoje).first():
-        print(f"✅ Diário de {hoje.strftime('%d/%m/%Y')} já processado")
+        print(f'✅ DJERJ de {hoje.strftime("%d/%m/%Y")} já processado')
+        return
+    
+    # Encontrar URL do PDF do dia
+    pdf_url = encontrar_url_pdf_diaria(hoje)
+    
+    if not pdf_url:
+        print('❌ Não foi possível encontrar o PDF do dia')
         return
     
     # Baixar PDF
-    pdf_content = baixar_pdf_djerj_completo(hoje)
+    pdf_content = baixar_pdf(pdf_url)
     
     if pdf_content:
-        # Salvar PDF e processar
-        nome_arquivo = f"diario_{hoje.strftime('%Y%m%d')}.pdf"
-        caminho_pdf = os.path.join('temp', nome_arquivo)
+        # Salvar temporariamente
+        os.makedirs('temp', exist_ok=True)
+        caminho_pdf = f'temp/diario_{hoje.strftime("%Y%m%d")}.pdf'
         
         with open(caminho_pdf, 'wb') as f:
             f.write(pdf_content)
         
-        print(f"💾 PDF salvo: {caminho_pdf}")
+        print(f'✅ PDF baixado: {len(pdf_content)} bytes')
         
-        # Extrair texto do PDF (usando pdfminer)
+        # Extrair texto
         texto = extrair_texto_pdf(caminho_pdf)
         
-        # Processar texto e salvar no banco
-        processar_diario(texto, hoje, caminho_pdf)
+        if texto:
+            # Verificar se contém conteúdo relevante
+            if len(texto.strip()) > 100:
+                # Contar publicações
+                total_publicacoes = texto.count('Advogado') + texto.count('ADVOGADO')
+                
+                novo_diario = DiarioOficial(
+                    data_publicacao=hoje,
+                    fonte='DJERJ',
+                    total_publicacoes=total_publicacoes,
+                    arquivo_pdf=caminho_pdf
+                )
+                
+                db.session.add(novo_diario)
+                db.session.commit()
+                
+                print(f'✅ Diário salvo com {total_publicacoes} publicações')
+            else:
+                print('❌ PDF vazio ou com pouco texto')
+        else:
+            print('❌ Não foi possível extrair texto do PDF')
         
-        # Limpar arquivo temporário
+        # Limpar arquivo
         os.remove(caminho_pdf)
         
     else:
-        print("❌ Nenhum PDF encontrado para download")
+        print('❌ Falha ao baixar PDF')
 
-# No seu scraper principal, substitua a chamada atual por:
-# executar_scraper_atualizado()
+if __name__ == '__main__':
+    executar_scraper_djerj()
