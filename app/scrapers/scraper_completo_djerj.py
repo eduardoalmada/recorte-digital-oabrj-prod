@@ -4,33 +4,22 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import time
 import os
-import glob
+import re
 from app import db
 from app.models import DiarioOficial
 from pdfminer.high_level import extract_text
 
-def baixar_pdf_com_javascript_direto(data):
-    """Usa JavaScript para acionar o download diretamente"""
-    print(f'🔍 Iniciando download para {data.strftime("%d/%m/%Y")}...')
+def encontrar_e_baixar_pdf(data):
+    """Encontra a URL do PDF e baixa diretamente"""
+    print(f'🔍 Buscando PDF para {data.strftime("%d/%m/%Y")}...')
     
     chrome_options = Options()
     chrome_options.add_argument('--headless')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--window-size=1920,1080')
-    
-    # Configurar download automático
-    download_dir = '/tmp'
-    chrome_options.add_experimental_option('prefs', {
-        'download.default_directory': download_dir,
-        'download.prompt_for_download': False,
-        'download.directory_upgrade': True,
-        'safebrowsing.enabled': True
-    })
     
     driver = webdriver.Chrome(options=chrome_options)
     
@@ -41,110 +30,101 @@ def baixar_pdf_com_javascript_direto(data):
         # Esperar carregamento
         time.sleep(5)
         
-        # Localizar o iframe do PDF
+        # Estratégia 1: Analisar o HTML da página para encontrar a URL do PDF
+        page_source = driver.page_source
+        print('📄 Analisando código fonte da página...')
+        
+        # Procurar URLs de PDF no código fonte
+        pdf_urls = re.findall(r'https?://[^\s"]+\.pdf', page_source)
+        print(f'📦 URLs PDF encontradas: {len(pdf_urls)}')
+        for url in pdf_urls:
+            print(f'  → {url}')
+        
+        # Procurar por parâmetros filename no código fonte
+        filename_matches = re.findall(r'filename=([^&"\']+)', page_source)
+        print(f'📝 Filenames encontrados: {filename_matches}')
+        
+        # Se encontrou filenames, tentar construir a URL
+        if filename_matches:
+            for filename in filename_matches:
+                pdf_url = f'https://www3.tjrj.jus.br/consultadje/temp/{filename}'
+                print(f'🎯 Tentando URL: {pdf_url}')
+                
+                # Tentar baixar diretamente
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/pdf, */*',
+                    'Referer': 'https://www3.tjrj.jus.br/consultadje/'
+                }
+                
+                try:
+                    response = requests.get(pdf_url, headers=headers, timeout=15)
+                    if response.status_code == 200 and response.content.startswith(b'%PDF'):
+                        print('✅ PDF baixado com sucesso via URL direta!')
+                        return response.content
+                    else:
+                        print(f'❌ Falha no download: Status {response.status_code}')
+                except Exception as e:
+                    print(f'❌ Erro ao baixar: {e}')
+        
+        # Estratégia 2: Analisar iframes
+        print('🔍 Analisando iframes...')
         iframes = driver.find_elements(By.TAG_NAME, 'iframe')
-        pdf_iframe = None
         
         for iframe in iframes:
-            src = iframe.get_attribute('src') or ''
-            if 'pdf.aspx' in src:
-                pdf_iframe = iframe
-                print(f'✅ Iframe do PDF encontrado: {src}')
-                break
-        
-        if not pdf_iframe:
-            print('❌ Iframe do PDF não encontrado')
-            return None
-        
-        # Mudar para o iframe do PDF
-        driver.switch_to.frame(pdf_iframe)
-        print('✅ Entrou no iframe do PDF')
-        time.sleep(3)
-        
-        # ESTRATÉGIA DIRETA: Executar JavaScript para forçar o download
-        print('⚡ Executando JavaScript para download...')
-        
-        # Script JavaScript para acionar o download
-        js_script = """
-        // Função para acionar o download
-        function triggerDownload() {
-            // Tentativa 1: Usar PDFViewerApplication se disponível
-            if (typeof PDFViewerApplication !== 'undefined') {
-                PDFViewerApplication.download();
-                return 'Download acionado via PDFViewerApplication';
-            }
+            iframe_src = iframe.get_attribute('src') or ''
+            print(f'Iframe: {iframe_src}')
             
-            // Tentativa 2: Procurar e clicar no botão de download
-            var downloadBtn = document.getElementById('secondaryDownload') || 
-                             document.getElementById('download') ||
-                             document.querySelector('button[title="Save"]') ||
-                             document.querySelector('button[data-l10n-id="save"]');
-            
-            if (downloadBtn) {
-                downloadBtn.click();
-                return 'Botão de download clicado';
-            }
-            
-            // Tentativa 3: Abrir toolbar secundária primeiro
-            var toolbarToggle = document.getElementById('secondaryToolbarToggle');
-            if (toolbarToggle) {
-                toolbarToggle.click();
-                
-                // Esperar um pouco e tentar clicar no download
-                setTimeout(function() {
-                    var downloadBtnAfter = document.getElementById('secondaryDownload');
-                    if (downloadBtnAfter) {
-                        downloadBtnAfter.click();
-                        return 'Toolbar aberta e download clicado';
-                    }
-                    return 'Toolbar aberta mas botão não encontrado';
-                }, 1000);
-            }
-            
-            return 'Nenhum método de download encontrado';
-        }
+            # Se for o iframe do PDF, analisar seu conteúdo
+            if 'pdf.aspx' in iframe_src:
+                try:
+                    driver.switch_to.frame(iframe)
+                    time.sleep(2)
+                    
+                    # Analisar o HTML do iframe
+                    iframe_html = driver.page_source
+                    print('📊 Analisando conteúdo do iframe...')
+                    
+                    # Procurar URLs de PDF no iframe
+                    iframe_pdf_urls = re.findall(r'https?://[^\s"]+\.pdf', iframe_html)
+                    print(f'📦 URLs PDF no iframe: {len(iframe_pdf_urls)}')
+                    for url in iframe_pdf_urls:
+                        print(f'  → {url}')
+                    
+                    # Procurar por filenames no iframe
+                    iframe_filenames = re.findall(r'filename=([^&"\']+)', iframe_html)
+                    print(f'📝 Filenames no iframe: {iframe_filenames}')
+                    
+                    for filename in iframe_filenames:
+                        pdf_url = f'https://www3.tjrj.jus.br/consultadje/temp/{filename}'
+                        print(f'🎯 Tentando URL do iframe: {pdf_url}')
+                        
+                        # Tentar baixar
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Accept': 'application/pdf, */*',
+                            'Referer': 'https://www3.tjrj.jus.br/consultadje/'
+                        }
+                        
+                        try:
+                            response = requests.get(pdf_url, headers=headers, timeout=15)
+                            if response.status_code == 200 and response.content.startswith(b'%PDF'):
+                                print('✅ PDF baixado do iframe!')
+                                driver.switch_to.default_content()
+                                return response.content
+                        except Exception as e:
+                            print(f'❌ Erro ao baixar do iframe: {e}')
+                    
+                    driver.switch_to.default_content()
+                    
+                except Exception as e:
+                    print(f'❌ Erro ao analisar iframe: {e}')
+                    driver.switch_to.default_content()
         
-        return triggerDownload();
-        """
-        
-        # Executar o JavaScript
-        result = driver.execute_script(js_script)
-        print(f'✅ JavaScript executado: {result}')
-        
-        # Esperar o download
-        print('⏳ Aguardando download...')
-        time.sleep(10)
-        
-        # Voltar para o contexto principal
-        driver.switch_to.default_content()
-        
-        # Verificar se o arquivo foi baixado
-        downloads = glob.glob(os.path.join(download_dir, '*.pdf'))
-        if downloads:
-            # Encontrar o arquivo mais recente
-            latest_file = max(downloads, key=os.path.getctime)
-            print(f'✅ Arquivo baixado: {latest_file}')
-            
-            # Ler o conteúdo do arquivo
-            with open(latest_file, 'rb') as f:
-                pdf_content = f.read()
-            
-            # Verificar se é um PDF válido
-            if pdf_content.startswith(b'%PDF'):
-                print('✅ PDF válido baixado!')
-                # Limpar arquivo temporário
-                os.remove(latest_file)
-                return pdf_content
-            else:
-                print('❌ Arquivo baixado não é um PDF válido')
-                os.remove(latest_file)
-                return None
-        else:
-            print('❌ Nenhum arquivo PDF foi baixado')
-            return None
+        return None
             
     except Exception as e:
-        print(f'❌ Erro durante o download: {e}')
+        print(f'❌ Erro durante a busca: {e}')
         return None
     finally:
         driver.quit()
@@ -167,8 +147,8 @@ def executar_scraper_djerj():
         print(f'✅ DJERJ de {hoje.strftime("%d/%m/%Y")} já processado')
         return
     
-    # Baixar PDF usando JavaScript direto
-    pdf_content = baixar_pdf_com_javascript_direto(hoje)
+    # Encontrar e baixar PDF
+    pdf_content = encontrar_e_baixar_pdf(hoje)
     
     if pdf_content:
         # Salvar temporariamente
@@ -205,7 +185,7 @@ def executar_scraper_djerj():
         os.remove(caminho_pdf)
         
     else:
-        print('❌ Falha ao baixar PDF')
+        print('❌ Falha ao encontrar e baixar PDF')
 
 if __name__ == '__main__':
     from app import create_app
