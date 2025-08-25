@@ -29,17 +29,22 @@ class DiarioOficial(db.Model):
 
 
 class AdvogadoPublicacao(db.Model):
-    __tablename__ = "advogado_publicacao"  # Nome da tabela de relacionamento
+    __tablename__ = "advogado_publicacao"
 
     id = db.Column(db.Integer, primary_key=True)
     advogado_id = db.Column(db.Integer, db.ForeignKey('advogado.id'), nullable=False)
     diario_id = db.Column(db.Integer, db.ForeignKey('diario_oficial.id'), nullable=False)
     data_publicacao = db.Column(db.Date, nullable=False)
     qtd_mencoes = db.Column(db.Integer, default=1)
+    pagina = db.Column(db.Integer, nullable=True)  # Página onde foi encontrado
+    contexto = db.Column(db.Text, nullable=True)   # Trecho de texto around da menção
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relacionamentos
+    advogado = db.relationship('Advogado', backref=db.backref('publicacoes', lazy=True))
+    diario = db.relationship('DiarioOficial', backref=db.backref('publicacoes', lazy=True))
 
 
-# Mantenha a tabela Publicacao original se ainda for usada para outras finalidades
 class Publicacao(db.Model):
     __tablename__ = "publicacao"
 
