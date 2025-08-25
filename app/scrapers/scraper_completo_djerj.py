@@ -158,14 +158,24 @@ def enviar_whatsapp(telefone, mensagem):
         return
     
     try:
+        # ENDPOINT CORRETO para o que está no payload
         url = os.getenv("WHATSAPP_API_URL", "https://oabrj.uzapi.com.br:3333/sendText")
+        
+        # AJUSTE 1: Mova a sessionkey para o cabeçalho
+        headers = {
+            "Content-Type": "application/json",
+            "sessionkey": "oab"
+        }
+        
+        # AJUSTE 2: Mude 'to' para 'number'
         payload = {
             "session": "oab",
-            "sessionkey": "oab",
-            "to": telefone,
+            "number": telefone,
             "text": mensagem,
         }
-        r = requests.post(url, json=payload, timeout=15)
+        
+        # Use o cabeçalho 'headers' na requisição
+        r = requests.post(url, json=payload, headers=headers, timeout=15)
         if r.status_code == 200:
             print(f"✅ Mensagem enviada para {telefone}")
         else:
@@ -269,7 +279,11 @@ def executar_scraper_djerj():
             f"({hoje.strftime('%d/%m/%Y')})."
         )
         
-        enviar_whatsapp(advogado.whatsapp, mensagem)
+        # A mensagem agora inclui o link para o diário
+        link_diario = f"\nAcesse o Diário completo aqui: https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={hoje.strftime('%d/%m/%Y')}"
+        mensagem_final = mensagem + link_diario
+
+        enviar_whatsapp(advogado.whatsapp, mensagem_final)
         advogados_notificados += 1
 
     # Atualizar diário com total real de menções
