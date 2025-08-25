@@ -161,7 +161,8 @@ def enviar_whatsapp(telefone, mensagem):
         url = os.getenv("WHATSAPP_API_URL", "https://oabrj.uzapi.com.br:3333/sendText")
         payload = {
             "session": "oab",
-            "number": telefone,
+            "sessionkey": "oab",
+            "to": telefone,
             "text": mensagem,
         }
         r = requests.post(url, json=payload, timeout=15)
