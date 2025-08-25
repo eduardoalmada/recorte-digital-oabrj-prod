@@ -231,7 +231,7 @@ def executar_scraper_djerj():
     # Criar registro do diário
     diario = DiarioOficial(
         data_publicacao=hoje,
-        edicao="DJERJ",
+        fonte="DJERJ",
         total_publicacoes=total_publicacoes,
         arquivo_pdf=caminho_pdf  # Mantemos o caminho para referência futura
     )
