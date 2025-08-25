@@ -36,31 +36,20 @@ class AdvogadoPublicacao(db.Model):
     diario_id = db.Column(db.Integer, db.ForeignKey('diario_oficial.id'), nullable=False)
     data_publicacao = db.Column(db.Date, nullable=False)
     qtd_mencoes = db.Column(db.Integer, default=1)
-    pagina = db.Column(db.Integer, nullable=True)  # Página onde foi encontrado
-    contexto = db.Column(db.Text, nullable=True)   # Trecho de texto around da menção
+    pagina = db.Column(db.Integer, nullable=True)
+    contexto = db.Column(db.Text, nullable=True)
+    
+    # Campos adicionais da tabela Publicacao (para evitar duplicação)
+    titulo = db.Column(db.String(500), nullable=True)
+    tribunal = db.Column(db.String(255), nullable=True)
+    jornal = db.Column(db.String(255), nullable=True)
+    caderno = db.Column(db.String(255), nullable=True)
+    local = db.Column(db.String(255), nullable=True)
+    mensagem = db.Column(db.Text, nullable=True)
+    link = db.Column(db.Text, nullable=True)
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relacionamentos
     advogado = db.relationship('Advogado', backref=db.backref('publicacoes', lazy=True))
     diario = db.relationship('DiarioOficial', backref=db.backref('publicacoes', lazy=True))
-
-
-class Publicacao(db.Model):
-    __tablename__ = "publicacao"
-
-    id = db.Column(db.Integer, primary_key=True)
-    advogado_id = db.Column(
-        db.Integer, db.ForeignKey("advogado.id", ondelete="CASCADE"), nullable=False
-    )
-    quantidade_publicacoes = db.Column(db.Integer, default=1)
-    titulo = db.Column(db.String(500), nullable=False)
-    data_disponibilizacao = db.Column(db.Date, nullable=True)
-    data_publicacao = db.Column(db.Date, nullable=False)
-    tribunal = db.Column(db.String(255), nullable=True)
-    jornal = db.Column(db.String(255), nullable=True)
-    caderno = db.Column(db.String(255), nullable=True)
-    numero_pagina = db.Column(db.String(50), nullable=True)
-    local = db.Column(db.String(255), nullable=True)
-    mensagem = db.Column(db.Text, nullable=True)
-    link = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
