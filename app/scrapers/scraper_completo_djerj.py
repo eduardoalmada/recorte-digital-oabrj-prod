@@ -138,7 +138,7 @@ def executar_scraper_completo():
     advogados_encontrados_por_diario = {}
 
     try:
-        # Iniciar transação principal
+        # Iniciar transação explicitamente para garantir atomicidade
         db.session.begin()
         
         # Carregar todos os advogados uma única vez
@@ -149,11 +149,19 @@ def executar_scraper_completo():
         advogados_dict = {normalizar_texto(a.nome_completo): a for a in advogados}
 
         with open(caminho_pdf, "rb") as f:
-            # Extrair todas as páginas de uma vez para processamento eficiente
             pages = list(PDFPage.get_pages(f))
             total_pages = len(pages)
             print(f"📄 Processando {total_pages} páginas...")
             
+            # Registrar o Diário e vincular as publicações em uma única transação
+            diario = DiarioOficial(
+                data_publicacao=hoje,
+                fonte="DJERJ",
+                total_publicacoes=0, # Inicia com 0, será atualizado ao final
+                arquivo_pdf=caminho_pdf
+            )
+            db.session.add(diario)
+
             for page_num, page in enumerate(pages, 1):
                 try:
                     page_text = extract_text_from_page(page)
@@ -162,9 +170,9 @@ def executar_scraper_completo():
 
                     texto_norm_pagina = normalizar_texto(page_text)
                     
-                    # Buscar por todos os advogados de forma eficiente
                     for nome_normalizado, advogado in advogados_dict.items():
                         if nome_normalizado in texto_norm_pagina:
+                            
                             ocorrencias = [m.start() for m in re.finditer(re.escape(nome_normalizado), texto_norm_pagina)]
                             
                             for posicao in ocorrencias:
@@ -172,13 +180,22 @@ def executar_scraper_completo():
                                 inicio_ctx = max(0, posicao - 100)
                                 fim_ctx = min(len(texto_norm_pagina), posicao + len(nome_normalizado) + 100)
                                 contexto = texto_norm_pagina[inicio_ctx:fim_ctx].strip()
+                                link_publicacao = f"https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={hoje.strftime('%d/%m/%Y')}&caderno=E&pagina={page_num}"
                                 
                                 publicacao = AdvogadoPublicacao(
                                     advogado_id=advogado.id,
-                                    diario_id=None,
+                                    diario_id=diario.id, # Vincula diretamente ao objeto de diário
                                     data_publicacao=hoje,
                                     pagina=page_num,
-                                    contexto=contexto
+                                    contexto=contexto,
+                                    titulo=f"Publicação DJERJ - {advogado.nome_completo} - Página {page_num}",
+                                    tribunal="Tribunal de Justiça do Estado do Rio de Janeiro",
+                                    jornal="Diário da Justiça Eletrônico do Estado do Rio de Janeiro",
+                                    caderno="E",
+                                    local="Rio de Janeiro",
+                                    mensagem=f"Menção encontrada na página {page_num} do DJERJ",
+                                    link=link_publicacao,
+                                    qtd_mencoes=1
                                 )
                                 db.session.add(publicacao)
 
@@ -189,33 +206,17 @@ def executar_scraper_completo():
                                      }
                                 advogados_encontrados_por_diario[advogado.id]['mencoes'].append(publicacao)
                                 print(f"📍 Menção de {advogado.nome_completo} encontrada na página {page_num}")
-                    
-                    # Commit a cada 10 páginas para evitar transações muito longas
-                    if page_num % 10 == 0:
-                        db.session.commit()
-                        db.session.begin_nested()
-                        print(f"🔄 Commit intermediário na página {page_num}/{total_pages}")
                 
                 except Exception as e:
                     print(f"⚠️ Erro ao processar página {page_num}: {e}")
                     continue
         
-        # Registrar o Diário
-        diario = DiarioOficial(
-            data_publicacao=hoje,
-            edicao="DJERJ",
-            total_publicacoes=total_mencoes,
-            arquivo_pdf=caminho_pdf
-        )
-        db.session.add(diario)
+        # Atualiza o total de publicações do diário
+        diario.total_publicacoes = total_mencoes
+        
+        # Faz o commit único para todo o processo
         db.session.commit()
         
-        # Vincular publicações ao diário
-        publicacoes_hoje = AdvogadoPublicacao.query.filter_by(data_publicacao=hoje).all()
-        for publicacao in publicacoes_hoje:
-            publicacao.diario_id = diario.id
-        db.session.commit()
-
         # Enviar notificações
         notificacoes_enviadas = 0
         for advogado_id, data in advogados_encontrados_por_diario.items():
@@ -228,8 +229,6 @@ def executar_scraper_completo():
             
             mensagens = []
             for i, mencao in enumerate(mencoes, 1):
-                link = f"https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={hoje.strftime('%d/%m/%Y')}&caderno=E&pagina={mencao.pagina}"
-                
                 mensagem_bloco = f"""*Publicação {i} de {len(mencoes)}* no DJERJ de {hoje.strftime('%d/%m/%Y')}.
 
 *📄 Página:* {mencao.pagina}
@@ -237,8 +236,7 @@ def executar_scraper_completo():
 *📖 Trecho encontrado:*
 "{mencao.contexto}"
 
-*🔗 Link direto:* {link}"""
-
+*🔗 Link direto:* {mencao.link}"""
                 mensagens.append(mensagem_bloco)
             
             mensagem_final = f"""*📋 Recorte Digital - OABRJ* 🎯
@@ -256,6 +254,7 @@ Foram encontradas {len(mencoes)} publicações em seu nome.
             
             enviar_whatsapp(advogado.whatsapp, mensagem_final)
             notificacoes_enviadas += 1
+            time.sleep(1)  # Pausa entre notificações
 
         elapsed_time = time.time() - start_time
         print(f"✅ Processamento concluído em {elapsed_time:.2f} segundos")
@@ -266,7 +265,6 @@ Foram encontradas {len(mencoes)} publicações em seu nome.
         print(f"❌ Erro fatal: {e}")
         raise
     finally:
-        # Limpeza do arquivo temporário
         if 'caminho_pdf' in locals() and os.path.exists(caminho_pdf):
             os.remove(caminho_pdf)
             print(f"🧹 PDF temporário removido: {caminho_pdf}")
