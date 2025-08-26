@@ -282,8 +282,6 @@ def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes
         return existente
 
     try:
-        db.session.begin()
-
         diario_kwargs = _filter_kwargs(
             DiarioOficial,
             data_publicacao=dt,
@@ -316,11 +314,13 @@ def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes
                 )
                 db.session.add(AdvogadoPublicacao(**pub_kwargs))
 
+        # A transação será iniciada e confirmada aqui
         db.session.commit()
         print(f"💽 Diário persistido: {dt.strftime('%d/%m/%Y')} [{caderno}] – {total_mencoes} menções")
         return diario
 
     except Exception as e:
+        # A sessão é revertida em caso de exceção
         db.session.rollback()
         print(f"❌ Erro ao persistir resultados: {e}")
         raise
