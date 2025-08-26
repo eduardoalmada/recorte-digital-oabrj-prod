@@ -238,7 +238,7 @@ def executar_scraper_completo():
 
 *🔗 Link direto:* {mencao.link}"""
                 mensagens.append(mensagem_bloco)
-            
+
             mensagem_final = f"""*📋 Recorte Digital - OABRJ* 🎯
 
 *Olá, {advogado.nome_completo}.*
@@ -251,6 +251,7 @@ Foram encontradas {len(mencoes)} publicações em seu nome.
 
 *OABRJ - Recorte Digital* 📊
 *Monitoramento inteligente de publicações*"""
+
             
             enviar_whatsapp(advogado.whatsapp, mensagem_final)
             notificacoes_enviadas += 1
