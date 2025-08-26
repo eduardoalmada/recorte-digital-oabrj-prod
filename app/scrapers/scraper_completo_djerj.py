@@ -8,6 +8,7 @@ import unicodedata
 import requests
 from io import StringIO
 from datetime import datetime, date
+from typing import List, Pattern, Match
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -41,16 +42,81 @@ def caminho_pdf_cache(dt: date, caderno: str) -> str:
     return f"/tmp/diario_{d}_{safe_caderno}.pdf"
 
 
-# ===================== UTIL =====================
+# ===================== UTILIDADES DE TEXTO =====================
 
 def normalizar_texto(texto: str) -> str:
-    """Remove acentos e converte para maiúsculas para busca mais confiável."""
+    """Normalização robusta: acentos, espaços, maiúsculas e limpeza."""
+    if not texto:
+        return ""
+    
     texto = texto.upper()
-    return unicodedata.normalize("NFKD", texto).encode("ASCII", "ignore").decode("ASCII")
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII')
+    texto = re.sub(r'\s+', ' ', texto)  # Normaliza múltiplos espaços
+    return texto.strip()
 
+def criar_regex_oab(numero_oab: str) -> str:
+    """Cria regex flexível para todas as variações de OAB."""
+    if not numero_oab:
+        return ""
+    
+    # Limpa e normaliza a OAB
+    oab_clean = re.sub(r'[^\w\s]', ' ', numero_oab.upper())
+    oab_clean = re.sub(r'\s+', ' ', oab_clean).strip()
+    partes = oab_clean.split()
+    
+    regex_partes = []
+    for parte in partes:
+        if parte.isdigit() and len(parte) > 2:
+            # Parte numérica: permite 211, 211., 211-, 211 
+            regex_partes.append(r'[\s\-\.]*' + re.escape(parte) + r'[\s\-\.]*')
+        else:
+            # Texto: permite OAB, OAB/, OAB-, OAB 
+            regex_partes.append(r'[\s\/\-\.]*' + re.escape(parte) + r'[\s\/\-\.]*')
+    
+    return ''.join(regex_partes)
+
+def criar_regex_nome_flexivel(nome_completo: str) -> str:
+    """Cria regex que detecta nomes mesmo quando colados com texto anterior."""
+    nome_norm = normalizar_texto(nome_completo)
+    partes = nome_norm.split()
+    
+    regex_partes = []
+    for i, parte in enumerate(partes):
+        if i == 0:
+            # Primeira parte: pode estar colada com texto antes
+            regex_partes.append(r'(\w*' + re.escape(parte) + r')')
+        else:
+            # Partes seguintes: devem ter espaço ou estar coladas
+            regex_partes.append(r'[\s]?' + re.escape(parte))
+    
+    return r'\s+'.join(regex_partes)
+
+def buscar_mencoes_advogado(texto_norm: str, advogado: Advogado) -> List[Match]:
+    """Busca todas as menções válidas do advogado no texto normalizado."""
+    resultados = []
+    
+    # Padrão flexível para nome (com detecção de nomes colados)
+    nome_pattern = criar_regex_nome_flexivel(advogado.nome_completo)
+    
+    if advogado.numero_oab:
+        # Padrão super flexível para OAB
+        oab_pattern = criar_regex_oab(advogado.numero_oab)
+        
+        # Padrão combinado: nome + OAB com proximidade (até 80 caracteres)
+        padrao_completo = f"({nome_pattern})" + r".{0,80}?" + f"({oab_pattern})"
+        
+        # Busca todas as ocorrências
+        for match in re.finditer(padrao_completo, texto_norm, re.IGNORECASE):
+            resultados.append(match)
+    else:
+        # Fallback: busca apenas pelo nome
+        for match in re.finditer(nome_pattern, texto_norm, re.IGNORECASE):
+            resultados.append(match)
+    
+    return resultados
 
 def extract_text_from_page(page) -> str:
-    """Extrai texto de uma única página PDF de forma eficiente (pdfminer.six)."""
+    """Extrai texto de uma única página PDF de forma eficiente."""
     resource_manager = PDFResourceManager()
     buf = StringIO()
     converter = TextConverter(resource_manager, buf, laparams=LAParams())
@@ -61,7 +127,6 @@ def extract_text_from_page(page) -> str:
     finally:
         converter.close()
         buf.close()
-
 
 def _filter_kwargs(model_cls, **kwargs):
     """Mantém apenas colunas que existem no model para evitar TypeError."""
@@ -87,7 +152,7 @@ def enviar_whatsapp(telefone: str, mensagem: str):
             print(f"✅ Mensagem enviada para {telefone}")
         else:
             print(f"❌ Erro WhatsApp ({r.status_code}): {r.text}")
-        time.sleep(2.0)  # rate limit básico
+        time.sleep(2.0)
     except Exception as e:
         print(f"❌ Erro WhatsApp: {e}")
         time.sleep(4.0)
@@ -96,10 +161,7 @@ def enviar_whatsapp(telefone: str, mensagem: str):
 # ===================== DOWNLOAD / CACHE =====================
 
 def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
-    """
-    Baixa o PDF durante a sessão do Selenium e salva em /tmp.
-    Usa cache se já existir em /tmp.
-    """
+    """Baixa o PDF durante a sessão do Selenium e salva em /tmp."""
     destino = caminho_pdf_cache(dt, caderno)
     if os.path.exists(destino) and os.path.getsize(destino) > 0:
         print(f"🟢 Cache encontrado para {dt.strftime('%d/%m/%Y')} [{caderno}]: {destino}")
@@ -134,7 +196,6 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
             time.sleep(3)
 
             html = driver.page_source or ""
-            # Captura caminhos temp/*.pdf por várias formas
             candidates = set()
             for pat in (
                 r"(?:['\"])((?:/)?temp/[^\"']+?\.pdf)(?:['\"])",
@@ -150,7 +211,6 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
 
             print(f"📝 URLs candidatas ({len(candidates)}): {list(candidates)[:3]}{'...' if len(candidates)>3 else ''}")
 
-            # Tenta baixar usando cookies da sessão do Selenium
             cookies = driver.get_cookies()
             session = requests.Session()
             for c in cookies:
@@ -166,7 +226,6 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
             }
 
             for path in candidates:
-                # CORREÇÃO: Remove o prefixo duplicado da URL
                 clean_path = path.lstrip("/").replace("consultadje/", "").strip()
                 if not clean_path.lower().startswith("temp/"):
                     clean_path = f"temp/{clean_path}"
@@ -197,19 +256,13 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
 # ===================== PROCESSAMENTO =====================
 
 def processar_pdf(dt: date, caderno: str, caminho_pdf: str):
-    """
-    Varre o PDF por página, encontra menções e retorna:
-    - total_mencoes
-    - mapa_advogado_id -> lista de dicts (mencoes)
-    """
+    """Varre o PDF por página, encontra menções e retorna resultados."""
     total_mencoes = 0
     por_advogado = {}
 
-    # Carrega todos os advogados e pré-normaliza
+    # Carrega todos os advogados
     advogados = Advogado.query.all()
     print(f"👨‍💼 {len(advogados)} advogados cadastrados. Buscando menções...")
-    nome_norm_to_adv = {normalizar_texto(a.nome_completo): a for a in advogados}
-    nomes_norm = list(nome_norm_to_adv.keys())
 
     with open(caminho_pdf, "rb") as fp:
         pages = list(PDFPage.get_pages(fp))
@@ -223,19 +276,15 @@ def processar_pdf(dt: date, caderno: str, caminho_pdf: str):
 
                 texto_norm = normalizar_texto(raw_text)
 
-                # 1) pré-filtra nomes que aparecem na página (set)
-                nomes_presentes = {n for n in nomes_norm if n in texto_norm}
-                if not nomes_presentes:
-                    continue
-
-                # 2) para cada nome presente, encontra TODAS as ocorrências
-                for nome_n in nomes_presentes:
-                    advogado = nome_norm_to_adv[nome_n]
-                    # encontra todas as ocorrências exatas da string já normalizada
-                    for m in re.finditer(re.escape(nome_n), texto_norm):
+                # Processa CADA advogado individualmente para busca precisa
+                for advogado in advogados:
+                    matches = buscar_mencoes_advogado(texto_norm, advogado)
+                    
+                    for match in matches:
                         total_mencoes += 1
-                        start = m.start()
-                        end = m.end()
+                        start, end = match.span()
+                        
+                        # Contexto para mostrar no WhatsApp
                         ctx_ini = max(0, start - 120)
                         ctx_fim = min(len(texto_norm), end + 120)
                         contexto = texto_norm[ctx_ini:ctx_fim].strip()
@@ -255,6 +304,7 @@ def processar_pdf(dt: date, caderno: str, caminho_pdf: str):
                         }
 
                         por_advogado.setdefault(advogado.id, []).append(mencao)
+                        print(f"📍 Menção confirmada: {advogado.nome_completo} - Página {page_num}")
 
                 if page_num % 20 == 0:
                     print(f"    • {page_num} páginas varridas...")
@@ -265,15 +315,9 @@ def processar_pdf(dt: date, caderno: str, caminho_pdf: str):
 
     return total_mencoes, por_advogado
 
-
 def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes: int, por_advogado: dict):
-    """
-    Cria o registro do Diário e todas as publicações numa transação.
-    Retorna o objeto Diário (commit aplicado).
-    """
-    # evita duplicação: se já existe diário para (data, caderno), não cria outro
+    """Cria o registro do Diário e todas as publicações numa transação."""
     q = DiarioOficial.query.filter_by(data_publicacao=dt)
-    # se o modelo tiver coluna 'caderno', filtra também
     if "caderno" in (c.name for c in DiarioOficial.__table__.columns):
         q = q.filter_by(caderno=caderno)
     existente = q.first()
@@ -292,7 +336,7 @@ def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes
         )
         diario = DiarioOficial(**diario_kwargs)
         db.session.add(diario)
-        db.session.flush()  # garante diario.id
+        db.session.flush()
 
         for adv_id, mencoes in por_advogado.items():
             for m in mencoes:
@@ -314,22 +358,17 @@ def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes
                 )
                 db.session.add(AdvogadoPublicacao(**pub_kwargs))
 
-        # A transação será iniciada e confirmada aqui
         db.session.commit()
         print(f"💽 Diário persistido: {dt.strftime('%d/%m/%Y')} [{caderno}] – {total_mencoes} menções")
         return diario
 
     except Exception as e:
-        # A sessão é revertida em caso de exceção
         db.session.rollback()
         print(f"❌ Erro ao persistir resultados: {e}")
         raise
 
-
 def enviar_notificacoes(por_advogado: dict, dt: date, caderno: str):
-    """
-    Envia UMA mensagem por menção (link direto da página).
-    """
+    """Envia UMA mensagem por menção (link direto da página)."""
     total_msgs = 0
     for adv_id, mencoes in por_advogado.items():
         advogado = mencoes[0]["advogado"] if mencoes else None
@@ -341,7 +380,6 @@ def enviar_notificacoes(por_advogado: dict, dt: date, caderno: str):
             continue
 
         for idx, m in enumerate(mencoes, 1):
-            # Mensagem pequena e direta por publicação
             mensagem = (
                 f"*Recorte Digital - OABRJ*\n"
                 f"📅 {dt.strftime('%d/%m/%Y')} • Caderno: {caderno} • Página: {m['pagina']}\n\n"
@@ -351,7 +389,6 @@ def enviar_notificacoes(por_advogado: dict, dt: date, caderno: str):
             enviar_whatsapp(advogado.whatsapp, mensagem)
             total_msgs += 1
 
-        # pequena pausa entre lotes por advogado
         time.sleep(1.0)
 
     print(f"📨 Notificações enviadas: {total_msgs}")
@@ -374,7 +411,6 @@ def executar_scraper_completo():
     for caderno in cadernos:
         print(f"\n===== CADERNO: {caderno} =====")
 
-        # Se já existe (data[, caderno]) no banco, pula o download/processamento
         q = DiarioOficial.query.filter_by(data_publicacao=dt)
         if "caderno" in (c.name for c in DiarioOficial.__table__.columns):
             q = q.filter_by(caderno=caderno)
@@ -391,8 +427,6 @@ def executar_scraper_completo():
         total_geral_mencoes += total_mencoes
 
         diario = persistir_resultados(dt, caderno, caminho, total_mencoes, por_advogado)
-
-        # Notificações (fora da transação)
         enviar_notificacoes(por_advogado, dt, caderno)
         total_geral_msgs += sum(len(v) for v in por_advogado.values())
 
