@@ -138,26 +138,23 @@ def executar_scraper_completo():
     advogados_encontrados_por_diario = {}
 
     try:
-        # Iniciar transação explicitamente para garantir atomicidade
         db.session.begin()
-        
-        # Carregar todos os advogados uma única vez
+
         advogados = Advogado.query.all()
         print(f"👨‍💼 {len(advogados)} advogados cadastrados. Buscando menções...")
-        
-        # Criar dicionário para acesso rápido
+
         advogados_dict = {normalizar_texto(a.nome_completo): a for a in advogados}
+        nomes_advogados_set = set(advogados_dict.keys())
 
         with open(caminho_pdf, "rb") as f:
             pages = list(PDFPage.get_pages(f))
             total_pages = len(pages)
             print(f"📄 Processando {total_pages} páginas...")
-            
-            # Registrar o Diário e vincular as publicações em uma única transação
+
             diario = DiarioOficial(
                 data_publicacao=hoje,
                 fonte="DJERJ",
-                total_publicacoes=0, # Inicia com 0, será atualizado ao final
+                total_publicacoes=0,
                 arquivo_pdf=caminho_pdf
             )
             db.session.add(diario)
@@ -169,93 +166,88 @@ def executar_scraper_completo():
                         continue
 
                     texto_norm_pagina = normalizar_texto(page_text)
-                    
-                    for nome_normalizado, advogado in advogados_dict.items():
-                        if nome_normalizado in texto_norm_pagina:
-                            
-                            ocorrencias = [m.start() for m in re.finditer(re.escape(nome_normalizado), texto_norm_pagina)]
-                            
-                            for posicao in ocorrencias:
-                                total_mencoes += 1
-                                inicio_ctx = max(0, posicao - 100)
-                                fim_ctx = min(len(texto_norm_pagina), posicao + len(nome_normalizado) + 100)
-                                contexto = texto_norm_pagina[inicio_ctx:fim_ctx].strip()
-                                link_publicacao = f"https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={hoje.strftime('%d/%m/%Y')}&caderno=E&pagina={page_num}"
-                                
-                                publicacao = AdvogadoPublicacao(
-                                    advogado_id=advogado.id,
-                                    diario_id=diario.id, # Vincula diretamente ao objeto de diário
-                                    data_publicacao=hoje,
-                                    pagina=page_num,
-                                    contexto=contexto,
-                                    titulo=f"Publicação DJERJ - {advogado.nome_completo} - Página {page_num}",
-                                    tribunal="Tribunal de Justiça do Estado do Rio de Janeiro",
-                                    jornal="Diário da Justiça Eletrônico do Estado do Rio de Janeiro",
-                                    caderno="E",
-                                    local="Rio de Janeiro",
-                                    mensagem=f"Menção encontrada na página {page_num} do DJERJ",
-                                    link=link_publicacao,
-                                    qtd_mencoes=1
-                                )
-                                db.session.add(publicacao)
+                    tokens_pagina = set(texto_norm_pagina.split())
+                    possiveis_nomes = nomes_advogados_set.intersection(tokens_pagina)
 
-                                if advogado.id not in advogados_encontrados_por_diario:
-                                     advogados_encontrados_por_diario[advogado.id] = {
-                                         'obj': advogado,
-                                         'mencoes': []
-                                     }
-                                advogados_encontrados_por_diario[advogado.id]['mencoes'].append(publicacao)
-                                print(f"📍 Menção de {advogado.nome_completo} encontrada na página {page_num}")
-                
+                    for nome_normalizado in possiveis_nomes:
+                        advogado = advogados_dict[nome_normalizado]
+                        ocorrencias = [m.start() for m in re.finditer(re.escape(nome_normalizado), texto_norm_pagina)]
+
+                        for posicao in ocorrencias:
+                            total_mencoes += 1
+                            inicio_ctx = max(0, posicao - 100)
+                            fim_ctx = min(len(texto_norm_pagina), posicao + len(nome_normalizado) + 100)
+                            contexto = texto_norm_pagina[inicio_ctx:fim_ctx].strip()
+                            link_publicacao = (
+                                f"https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?"
+                                f"dtPub={hoje.strftime('%d/%m/%Y')}&caderno=E&pagina={page_num}"
+                            )
+
+                            publicacao = AdvogadoPublicacao(
+                                advogado_id=advogado.id,
+                                diario_id=diario.id,
+                                data_publicacao=hoje,
+                                pagina=page_num,
+                                contexto=contexto,
+                                titulo=f"Publicação DJERJ - {advogado.nome_completo} - Página {page_num}",
+                                tribunal="Tribunal de Justiça do Estado do Rio de Janeiro",
+                                jornal="Diário da Justiça Eletrônico do Estado do Rio de Janeiro",
+                                caderno="E",
+                                local="Rio de Janeiro",
+                                mensagem=f"Menção encontrada na página {page_num} do DJERJ",
+                                link=link_publicacao,
+                                qtd_mencoes=1
+                            )
+                            db.session.add(publicacao)
+
+                            if advogado.id not in advogados_encontrados_por_diario:
+                                advogados_encontrados_por_diario[advogado.id] = {
+                                    'obj': advogado,
+                                    'mencoes': []
+                                }
+                            advogados_encontrados_por_diario[advogado.id]['mencoes'].append(publicacao)
+                            print(f"📍 Menção de {advogado.nome_completo} encontrada na página {page_num}")
+
                 except Exception as e:
                     print(f"⚠️ Erro ao processar página {page_num}: {e}")
                     continue
-        
-        # Atualiza o total de publicações do diário
+
         diario.total_publicacoes = total_mencoes
-        
-        # Faz o commit único para todo o processo
         db.session.commit()
-        
-        # Enviar notificações
+
         notificacoes_enviadas = 0
         for advogado_id, data in advogados_encontrados_por_diario.items():
             advogado = data['obj']
             mencoes = data['mencoes']
-            
+
             if not advogado.whatsapp:
                 print(f"⚠️ Advogado {advogado.nome_completo} sem WhatsApp cadastrado")
                 continue
-            
+
             mensagens = []
             for i, mencao in enumerate(mencoes, 1):
-                mensagem_bloco = f"""*Publicação {i} de {len(mencoes)}* no DJERJ de {hoje.strftime('%d/%m/%Y')}.
+                mensagens.append(
+                    f"*Publicação {i} de {len(mencoes)}* no DJERJ de {hoje.strftime('%d/%m/%Y')}.\n\n"
+                    f"*📄 Página:* {mencao.pagina}\n\n"
+                    f"*📖 Trecho encontrado:*\n\"{mencao.contexto}\"\n\n"
+                    f"*🔗 Link direto:* {mencao.link}"
+                )
 
-*📄 Página:* {mencao.pagina}
+            blocos_publicacoes = "\n\n".join(mensagens)
+            mensagem_final = (
+                f"*📋 Recorte Digital - OABRJ* 🎯\n\n"
+                f"*Olá, {advogado.nome_completo}.*\n\n"
+                f"Foram encontradas {len(mencoes)} publicações em seu nome.\n"
+                f"------------------------------------\n"
+                f"{blocos_publicacoes}\n\n"
+                f"*💼 Dúvidas?* Entre em contato com a OABRJ.\n\n"
+                f"*OABRJ - Recorte Digital* 📊\n"
+                f"*Monitoramento inteligente de publicações*"
+            )
 
-*📖 Trecho encontrado:*
-"{mencao.contexto}"
-
-*🔗 Link direto:* {mencao.link}"""
-                mensagens.append(mensagem_bloco)
-
-            mensagem_final = f"""*📋 Recorte Digital - OABRJ* 🎯
-
-*Olá, {advogado.nome_completo}.*
-
-Foram encontradas {len(mencoes)} publicações em seu nome.
-------------------------------------
-{"\n\n".join(mensagens)}
-
-*💼 Dúvidas?* Entre em contato com a OABRJ.
-
-*OABRJ - Recorte Digital* 📊
-*Monitoramento inteligente de publicações*"""
-
-            
             enviar_whatsapp(advogado.whatsapp, mensagem_final)
             notificacoes_enviadas += 1
-            time.sleep(1)  # Pausa entre notificações
+            time.sleep(1)
 
         elapsed_time = time.time() - start_time
         print(f"✅ Processamento concluído em {elapsed_time:.2f} segundos")
