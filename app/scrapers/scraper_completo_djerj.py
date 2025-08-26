@@ -166,10 +166,12 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
             }
 
             for path in candidates:
-                path = path.lstrip("/")
-                if not path.lower().startswith("temp/"):
-                    path = f"temp/{path}"
-                pdf_url = f"https://www3.tjrj.jus.br/consultadje/{path}"
+                # CORREÇÃO: Remove o prefixo duplicado da URL
+                clean_path = path.lstrip("/").replace("consultadje/", "").strip()
+                if not clean_path.lower().startswith("temp/"):
+                    clean_path = f"temp/{clean_path}"
+
+                pdf_url = f"https://www3.tjrj.jus.br/consultadje/{clean_path}"
                 print(f"🎯 Tentando URL: {pdf_url}")
 
                 try:
@@ -255,7 +257,7 @@ def processar_pdf(dt: date, caderno: str, caminho_pdf: str):
                         por_advogado.setdefault(advogado.id, []).append(mencao)
 
                 if page_num % 20 == 0:
-                    print(f"   • {page_num} páginas varridas...")
+                    print(f"    • {page_num} páginas varridas...")
 
             except Exception as e:
                 print(f"⚠️ Erro ao processar página {page_num}: {e}")
