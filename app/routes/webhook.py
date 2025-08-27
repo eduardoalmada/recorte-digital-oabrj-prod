@@ -2,12 +2,16 @@ from flask import Blueprint, request, jsonify
 from app import db
 from app.models import Advogado
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import Table, Column, Integer, String, MetaData
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Cria blueprint
 webhook_bp = Blueprint("webhook", __name__)
 
 # Define tabela advogados_excluidos manualmente
+from sqlalchemy import Table, Column, Integer, String, MetaData
+
 metadata = db.metadata
 
 AdvogadosExcluidos = Table(
@@ -28,17 +32,23 @@ def whatsapp_webhook():
     """
     try:
         data = request.get_json()
-        numero = data.get("phone")  # formato: 5521999999999
+        if not data or "phone" not in data or "message" not in data:
+            logger.warning(f"JSON inválido recebido: {data}")
+            return jsonify({"error": "Dados inválidos"}), 400
+
+        telefone = data.get("phone")  # formato: 5521999999999
         mensagem = data.get("message", "").strip().upper()
 
-        if not numero or not mensagem:
-            return jsonify({"error": "Dados inválidos"}), 400
+        logger.info(f"Webhook recebido para o número {telefone}: '{mensagem}'")
 
         # Só trata mensagem "CANCELAR"
         if mensagem == "CANCELAR":
-            advogado = Advogado.query.filter_by(whatsapp=numero).first()
+            advogado = Advogado.query.filter_by(whatsapp=telefone).first()
             if not advogado:
+                logger.info(f"Nenhum advogado encontrado com WhatsApp {telefone}")
                 return jsonify({"status": "whatsapp não encontrado"}), 404
+
+            logger.info(f"Advogado encontrado: {advogado.nome_completo} (OAB {advogado.numero_oab})")
 
             # Insere no advogados_excluidos
             insert_stmt = AdvogadosExcluidos.insert().values(
@@ -52,12 +62,22 @@ def whatsapp_webhook():
             db.session.delete(advogado)
             db.session.commit()
 
+            logger.info(f"Advogado {advogado.nome_completo} movido para advogados_excluidos")
+
+            # Envia mensagem de confirmação
+            from app.utils import enviar_whatsapp  # ajuste se a função estiver em outro módulo
+            enviar_whatsapp(advogado.whatsapp, 
+                "✅ Você foi removido do Recorte Digital OAB/RJ. Não receberá mais notificações. Obrigado!")
+
             return jsonify({"status": "advogado removido e movido para advogados_excluidos"}), 200
 
+        logger.info(f"Mensagem ignorada: '{mensagem}'")
         return jsonify({"status": "mensagem ignorada"}), 200
 
     except SQLAlchemyError as e:
         db.session.rollback()
+        logger.error(f"Erro de banco: {str(e)}")
         return jsonify({"error": str(e)}), 500
     except Exception as e:
+        logger.exception("Erro inesperado no webhook")
         return jsonify({"error": str(e)}), 500
