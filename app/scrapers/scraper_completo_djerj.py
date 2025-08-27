@@ -1,4 +1,4 @@
-# app/scrapers/scraper_completo_djerj.py (Versão Final Otimizada e Corrigida)
+# app/scrapers/scraper_completo_djerj.py (Versão Otimizada com Prioridades)
 
 import os
 import re
@@ -52,15 +52,22 @@ root_logger.setLevel(logging.INFO)
 root_logger.addHandler(handler)
 logger = logging.getLogger(__name__)
 
-# ===================== CONFIGURAÇões =====================
+# ===================== CONFIGURAÇÕES =====================
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 MAX_RETRIES = 3
 WHATSAPP_THREADS = int(os.getenv("WHATSAPP_THREADS", "8"))
 advogado_patterns = {}  # Cache para regex pré-compilada
 
+# ===================== PRIORIDADE DE NOTIFICAÇÃO POR CADERNO =====================
+PRIORIDADE_CADERNO = {
+    "JUDICIARIO": True,      # Notifica sempre - Decisões, sentenças, processos
+    "E": True,               # Notifica sempre - Intimações, citações, publicações gerais  
+    "ADMINISTRATIVO": False  # Salva no BD mas não envia WhatsApp - Atos internos do tribunal
+}
+
 def obter_cadernos() -> List[str]:
-    raw = os.getenv("CADERNOS_DJERJ", "E")
-    return [c.strip() for c in raw.split(",") if c.strip()]
+    raw = os.getenv("CADERNOS_DJERJ", "E,ADMINISTRATIVO,JUDICIARIO")
+    return [c.strip().upper() for c in raw.split(",") if c.strip()]
 
 def caminho_pdf_cache(dt: date, caderno: str) -> str:
     cache_dir = os.getenv("CACHE_DIR", "/tmp")
@@ -147,7 +154,7 @@ def enviar_whatsapp_single(telefone: str, mensagem: str) -> bool:
 
 def enviar_notificacao_individual(mencoes: list, dt: date, caderno: str, app) -> int:
     """Envia mensagem WhatsApp individual com opção de CANCELAR."""
-    with app.app_context():  # ✅ CORREÇÃO: Contexto de aplicação
+    with app.app_context():
         try:
             advogado = mencoes[0]["advogado"]
             if not getattr(advogado, "whatsapp", None): 
@@ -256,7 +263,7 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str, driver: webdriver.Chrome) 
                     candidates = set()
                     for pat in (
                         r"(?:['\"])((?:/)?temp/[^\"']+?\.pdf)(?:['\"])", 
-                        r"(?:filename=)([^&\"']+?\.pdf)", 
+                        r"(?:filename=)([^&\"'']+?\.pdf)", 
                         r"openPDF\('([^']+?\.pdf)'\)",
                     ):
                         for m in re.findall(pat, html, flags=re.IGNORECASE):
@@ -365,12 +372,12 @@ def processar_pdf(dt: date, caderno: str, caminho_pdf: str, advogados: List[Advo
     return total_mencoes, dict(por_advogado)
 
 def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes: int, por_advogado: dict):
-    q = DiarioOficial.query.filter_by(data_publicacao=dt)
-    if "caderno" in (c.name for c in DiarioOficial.__table__.columns): 
-        q = q.filter_by(caderno=caderno)
+    # ✅ Verifica específicamente por data + caderno
+    q = DiarioOficial.query.filter_by(data_publicacao=dt, caderno=caderno)
     if q.first():
-        logger.warning(f"Diário já existente. Pulando persistência.")
+        logger.warning(f"Diário já existente para {dt.strftime('%d/%m/%Y')} [{caderno}]. Pulando persistência.")
         return None
+    
     try:
         diario_kwargs = _filter_kwargs(
             DiarioOficial, 
@@ -418,9 +425,13 @@ def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes
 def processar_caderno_do_dia(dt: date, caderno: str, advogados: List[Advogado], driver: webdriver.Chrome, app) -> Tuple[int, int]:
     """Processa um único caderno do diário oficial e retorna (mencoes, mensagens)."""
     logger.info(f"\n===== CADERNO: {caderno} =====")
-    q = DiarioOficial.query.filter_by(data_publicacao=dt)
-    if "caderno" in (c.name for c in DiarioOficial.__table__.columns): 
-        q = q.filter_by(caderno=caderno)
+    
+    # ✅ Log informativo sobre configuração de notificações
+    notifica = PRIORIDADE_CADERNO.get(caderno.upper(), False)
+    logger.info(f"🔔 Configuração de notificações: {'ENVIAR' if notifica else 'NÃO ENVIAR'}")
+    
+    # ✅ Verifica específicamente por data + caderno
+    q = DiarioOficial.query.filter_by(data_publicacao=dt, caderno=caderno)
     if q.first():
         logger.warning(f"Diário já processado para {dt.strftime('%d/%m/%Y')} [{caderno}]. Pulando.")
         return 0, 0
@@ -432,31 +443,43 @@ def processar_caderno_do_dia(dt: date, caderno: str, advogados: List[Advogado], 
     
     total_mencoes, por_advogado = processar_pdf(dt, caderno, caminho, advogados)
     if total_mencoes == 0:
-        logger.info("Nenhuna menção encontrada. Pulando persistência.")
+        logger.info("Nenhuma menção encontrada. Pulando persistência.")
         return 0, 0
     
     diario = persistir_resultados(dt, caderno, caminho, total_mencoes, por_advogado)
     if not diario: 
         return 0, 0
     
-    msgs_enviadas = enviar_notificacoes_paralelo(por_advogado, dt, caderno, app)  # ✅ CORREÇÃO: Passa app
+    # ✅ Envio de notificações apenas se o caderno tiver prioridade
+    if PRIORIDADE_CADERNO.get(caderno.upper(), False):
+        msgs_enviadas = enviar_notificacoes_paralelo(por_advogado, dt, caderno, app)
+    else:
+        msgs_enviadas = 0
+        logger.info(f"📋 Caderno {caderno} processado e salvo, mas sem notificações (configuração de baixo impacto)")
+    
     return total_mencoes, msgs_enviadas
 
 # ===================== ORQUESTRAÇÃO TURBINADA =====================
 def executar_scraper_completo():
-    app = create_app()  # ✅ CORREÇÃO: Cria app aqui
+    """Executa a verificação diária completa em todos os cadernos."""
+    app = create_app()
     
     with app.app_context():
         agora_sp = datetime.now(TZ_SP)
         dt = agora_sp.date()
         inicio = time.time()
-        logger.info(f"Processando DJERJ de {dt.strftime('%d/%m/%Y')}")
         
+        logger.info("="*60)
+        logger.info(f"🔍 INICIANDO VERIFICAÇÃO DIÁRIA - {dt.strftime('%d/%m/%Y')}")
+        logger.info("="*60)
+        
+        # Carrega todos os advogados ativos
         advogados = Advogado.query.all()
-        logger.info(f"📊 {len(advogados)} advogados carregados")
+        logger.info(f"📊 {len(advogados)} advogados carregados para verificação")
         
+        # Todos os cadernos para verificação diária
         cadernos = obter_cadernos()
-        logger.info(f"Cadernos: {', '.join(cadernos)}")
+        logger.info(f"📰 Cadernos para verificação: {', '.join(cadernos)}")
         
         total_geral_mencoes = 0
         total_geral_msgs = 0
@@ -481,20 +504,27 @@ def executar_scraper_completo():
         try:
             for caderno in cadernos:
                 try:
-                    mencoes, msgs = processar_caderno_do_dia(dt, caderno, advogados, driver, app)  # ✅ CORREÇÃO: Passa app
+                    logger.info(f"\n📖 PROCESSANDO CADERNO: {caderno}")
+                    mencoes, msgs = processar_caderno_do_dia(dt, caderno, advogados, driver, app)
                     total_geral_mencoes += mencoes
                     total_geral_msgs += msgs
+                    logger.info(f"✅ Caderno {caderno} finalizado: {mencoes} menções, {msgs} notificações")
                 except Exception as e:
-                    logger.error(f"Erro ao processar caderno {caderno}: {e}")
+                    logger.error(f"❌ Erro ao processar caderno {caderno}: {e}")
                     continue
         except Exception as e:
-            logger.error(f"Erro geral na execução: {e}")
+            logger.error(f"❌ Erro geral na execução: {e}")
         finally:
             driver.quit()
 
         dur = time.time() - inicio
-        logger.info("="*50)
-        logger.info(f"✅ Concluído em {dur:.2f}s | Menções: {total_geral_mencoes} | Notificações: {total_geral_msgs}")
+        logger.info("="*60)
+        logger.info(f"✅ VERIFICAÇÃO DIÁRIA CONCLUÍDA")
+        logger.info(f"⏰ Tempo total: {dur:.2f}s")
+        logger.info(f"📊 Menções totais encontradas: {total_geral_mencoes}")
+        logger.info(f"✉️ Notificações enviadas: {total_geral_msgs}")
+        logger.info(f"📅 Data processada: {dt.strftime('%d/%m/%Y')}")
+        logger.info("="*60)
 
 if __name__ == "__main__":
     executar_scraper_completo()
