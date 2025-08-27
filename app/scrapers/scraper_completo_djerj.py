@@ -9,6 +9,7 @@ import logging
 import requests
 from io import StringIO
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Any, Set, Tuple, Match
 from collections import defaultdict
 
@@ -27,12 +28,30 @@ from pdfminer.layout import LAParams
 from app import db, create_app
 from app.models import DiarioOficial, Advogado, AdvogadoPublicacao
 
-# ===================== CONFIGURAÇÃO DE LOGGING =====================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%H:%M:%S'
-)
+# ===================== TIMEZONE =====================
+TZ_SP = ZoneInfo("America/Sao_Paulo")
+
+# ===================== CONFIGURAÇÃO DE LOGGING (USANDO HORÁRIO DE SP) =====================
+class TZFormatter(logging.Formatter):
+    """Formatter que converte o time para o timezone fornecido (ZoneInfo)."""
+    def __init__(self, fmt=None, datefmt=None, tz: ZoneInfo | None = None):
+        super().__init__(fmt=fmt, datefmt=datefmt)
+        self.tz = tz or ZoneInfo("UTC")
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, self.tz)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
+
+# Remove handlers antigos e configura novo handler com TZFormatter
+root_logger = logging.getLogger()
+root_logger.handlers = []
+handler = logging.StreamHandler()
+handler.setFormatter(TZFormatter(fmt='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S', tz=TZ_SP))
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(handler)
+
 logger = logging.getLogger(__name__)
 
 # ===================== CONFIGURAÇÕES =====================
@@ -506,10 +525,12 @@ def processar_caderno_do_dia(dt: date, caderno: str, advogados: List[Advogado]) 
 
 def executar_scraper_completo():
     """Função principal de orquestração do scraper."""
-    dt = datetime.now().date()
+    # Usa horário de São Paulo para data e logs
+    agora_sp = datetime.now(TZ_SP)
+    dt = agora_sp.date()
     inicio = time.time()
     logger.info(f"Processando DJERJ de {dt.strftime('%d/%m/%Y')}")
-    logger.info(f"Início: {datetime.now().strftime('%H:%M:%S')}")
+    logger.info(f"Início: {agora_sp.strftime('%H:%M:%S')} (horário SP)")
 
     # Carrega advogados UMA vez só
     advogados = Advogado.query.all()
@@ -537,7 +558,7 @@ def executar_scraper_completo():
     logger.info(f"✅ Processamento concluído em {dur:.2f} segundos")
     logger.info(f"📊 Menções totais encontradas: {total_geral_mencoes}")
     logger.info(f"✉️ Notificações enviadas: {total_geral_msgs}")
-    logger.info(f"⏰ Fim: {datetime.now().strftime('%H:%M:%S')}")
+    logger.info(f"⏰ Fim: {datetime.now(TZ_SP).strftime('%H:%M:%S')} (horário SP)")
 
 # ===================== MAIN =====================
 if __name__ == "__main__":
