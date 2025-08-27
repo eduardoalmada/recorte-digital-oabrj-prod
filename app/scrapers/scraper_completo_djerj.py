@@ -1,4 +1,4 @@
-# app/scrapers/scraper_completo_djerj.py (Versão Otimizada com Prioridades)
+# app/scrapers/scraper_completo_djerj.py (Versão Final Otimizada)
 
 import os
 import re
@@ -60,13 +60,13 @@ advogado_patterns = {}  # Cache para regex pré-compilada
 
 # ===================== PRIORIDADE DE NOTIFICAÇÃO POR CADERNO =====================
 PRIORIDADE_CADERNO = {
-    "JUDICIARIO": True,      # Notifica sempre - Decisões, sentenças, processos
-    "E": True,               # Notifica sempre - Intimações, citações, publicações gerais  
-    "ADMINISTRATIVO": False  # Salva no BD mas não envia WhatsApp - Atos internos do tribunal
+    "V": True,               # ✅ PRINCIPAL - Todo conteúdo judiciário está aqui
+    "E": True,               # ✅ Secundário - Intimações, citações, publicações gerais  
+    "ADMINISTRATIVO": False  # ❌ Apenas atos internos do tribunal (pode ignorar)
 }
 
 def obter_cadernos() -> List[str]:
-    raw = os.getenv("CADERNOS_DJERJ", "E,ADMINISTRATIVO,JUDICIARIO")
+    raw = os.getenv("CADERNOS_DJERJ", "V,E")  # ✅ Só V e E são relevantes
     return [c.strip().upper() for c in raw.split(",") if c.strip()]
 
 def caminho_pdf_cache(dt: date, caderno: str) -> str:
@@ -134,6 +134,19 @@ def _filter_kwargs(model_cls, **kwargs):
     cols = set(c.name for c in model_cls.__table__.columns)
     return {k: v for k, v in kwargs.items() if k in cols}
 
+# ===================== MAPEAMENTO DE CADERNOS PARA DESCRIÇÕES =====================
+DESCRICOES_CADERNOS = {
+    "V": "Tribunal de Justiça do Estado do Rio de Janeiro - Caderno V (Editais e Publicações Judiciárias)",
+    "E": "Tribunal de Justiça do Estado do Rio de Janeiro - Caderno E (Executivo/Extrajudicial)",
+    "ADMINISTRATIVO": "Tribunal de Justiça do Estado do Rio de Janeiro - Caderno Administrativo"
+}
+
+LOCAIS_CADERNOS = {
+    "V": "1ª e 2ª Instâncias - Todas as Comarcas",
+    "E": "Juizados Especiais e Publicações Gerais", 
+    "ADMINISTRATIVO": "Atos Internos do Tribunal"
+}
+
 # ===================== WHATSAPP OTIMIZADO E PARALELO =====================
 def enviar_whatsapp_single(telefone: str, mensagem: str) -> bool:
     if not telefone: return False
@@ -165,9 +178,9 @@ def enviar_notificacao_individual(mencoes: list, dt: date, caderno: str, app) ->
             
             # Emojis por caderno
             CADERNO_EMOJIS = {
-                "E": "📘",
-                "ADMINISTRATIVO": "📗", 
-                "JUDICIARIO": "📕"
+                "V": "⚖️",   # Balança da justiça para o caderno V (judiciário)
+                "E": "📘",    # Livro azul para o caderno E
+                "ADMINISTRATIVO": "📋"  # Pasta para administrativo
             }
             emoji_caderno = CADERNO_EMOJIS.get(caderno.upper(), "📋")
             
@@ -175,15 +188,20 @@ def enviar_notificacao_individual(mencoes: list, dt: date, caderno: str, app) ->
             paginas_links = {m["pagina"]: m["link"] for m in mencoes}
             paginas = sorted(paginas_links.keys())
             
+            # Descrição completa do caderno e local
+            descricao_caderno = DESCRICOES_CADERNOS.get(caderno.upper(), f"Caderno {caderno}")
+            local_publicacao = LOCAIS_CADERNOS.get(caderno.upper(), "Tribunal de Justiça do Estado do Rio de Janeiro")
+            
             # Construção da mensagem
             mensagem = (
                 f"{emoji_caderno} *RECORTE DIGITAL - OAB/RJ* {emoji_caderno}\n"
-                f"{'-'*40}\n\n"
-                f"📌 *Advogado:* {advogado.nome_completo}\n"
-                f"📅 *Diário Oficial:* {dt.strftime('%d/%m/%Y')}\n"
-                f"🗂️ *Caderno:* {caderno}\n"
-                f"• *{qtd_mencoes} {palavra_mencao}*\n"
-                f"• *Páginas:* {', '.join(map(str, paginas))}\n\n"
+                f"{'-'*50}\n\n"
+                f"👤 *Advogado:* {advogado.nome_completo}\n"
+                f"📅 *Data da Publicação:* {dt.strftime('%d/%m/%Y')}\n"
+                f"🏛️ *Tribunal:* {descricao_caderno}\n"
+                f"📍 *Local:* {local_publicacao}\n"
+                f"📊 *{qtd_mencoes} {palavra_mencao} encontradas*\n"
+                f"📄 *Páginas:* {', '.join(map(str, paginas))}\n\n"
             )
             
             # Exemplos das menções (máximo 2)
@@ -197,16 +215,16 @@ def enviar_notificacao_individual(mencoes: list, dt: date, caderno: str, app) ->
             # Links diretos (máximo 5)
             mensagem += "*🔗 LINKS DIRETOS:*\n"
             for pagina, link in list(paginas_links.items())[:5]:
-                mensagem += f"• 📄 Pág. {pagina}: {link}\n"
+                mensagem += f"• 📄 Página {pagina}: {link}\n"
             if len(paginas_links) > 5:
                 mensagem += f"• ... e mais {len(paginas_links) - 5} páginas\n"
             
             # Rodapé com opção de cancelamento
             mensagem += (
-                f"{'-'*40}\n"
+                f"{'-'*50}\n"
                 f"📢 *Recorte Digital OAB/RJ*\n"
                 f"Receba suas publicações de forma rápida e prática.\n\n"
-                f"❌ Caso não deseje mais receber este serviço, responda *CANCELAR* a este WhatsApp.\n"
+                f"❌ *CANCELAR:* Responda *CANCELAR* a este WhatsApp para parar de receber.\n"
                 f"*🤝 EQUIPE OAB/RJ*"
             )
             
