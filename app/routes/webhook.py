@@ -1,41 +1,64 @@
 from flask import Blueprint, request, jsonify
-from app.models import Advogado, AdvogadoExcluido
-from app.extensions import db
-from datetime import datetime
+from app import db
+from app.models import Advogado
+from sqlalchemy.exc import SQLAlchemyError
 
+# Cria blueprint
 webhook_bp = Blueprint("webhook", __name__)
 
-@webhook_bp.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.get_json()
+# Define tabela advogados_excluidos manualmente
+from sqlalchemy import Table, Column, Integer, String, MetaData
 
-    # Estrutura típica do UZAPI:
-    # {
-    #   "phone": "5521999999999",
-    #   "message": "CANCELAR"
-    # }
-    telefone = data.get("phone")
-    mensagem = data.get("message", "").strip().upper()
+metadata = db.metadata
 
-    if not telefone:
-        return jsonify({"status": "error", "msg": "Telefone não informado"}), 400
+AdvogadosExcluidos = Table(
+    "advogados_excluidos",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("nome_completo", String, nullable=False),
+    Column("numero_oab", String, nullable=True),
+    Column("telefone", String, nullable=False),
+)
 
-    if mensagem == "CANCELAR":
-        advogado = Advogado.query.filter_by(telefone=telefone).first()
-        if not advogado:
-            return jsonify({"status": "ok", "msg": "Número não encontrado na base."})
+@webhook_bp.route("/whatsapp", methods=["POST"])
+def whatsapp_webhook():
+    """
+    Webhook que recebe mensagens do WhatsApp (via UZAPI).
+    Se o usuário responder 'CANCELAR', remove da tabela advogados e
+    insere em advogados_excluidos.
+    """
+    try:
+        data = request.get_json()
+        telefone = data.get("phone")  # formato: 5521999999999
+        mensagem = data.get("message", "").strip().upper()
 
-        # Move para advogados_excluidos
-        advogado_excluido = AdvogadoExcluido(
-            nome_completo=advogado.nome_completo,
-            numero_oab=advogado.numero_oab,
-            telefone=advogado.telefone,
-            data_exclusao=datetime.now()
-        )
-        db.session.add(advogado_excluido)
-        db.session.delete(advogado)
-        db.session.commit()
+        if not telefone or not mensagem:
+            return jsonify({"error": "Dados inválidos"}), 400
 
-        return jsonify({"status": "ok", "msg": "Número removido com sucesso."})
+        # Só trata mensagem "CANCELAR"
+        if mensagem == "CANCELAR":
+            advogado = Advogado.query.filter_by(telefone=telefone).first()
+            if not advogado:
+                return jsonify({"status": "telefone não encontrado"}), 404
 
-    return jsonify({"status": "ok", "msg": "Mensagem recebida, mas não é CANCELAR."})
+            # Insere no advogados_excluidos
+            insert_stmt = AdvogadosExcluidos.insert().values(
+                nome_completo=advogado.nome_completo,
+                numero_oab=advogado.numero_oab,
+                telefone=advogado.telefone,
+            )
+            db.session.execute(insert_stmt)
+
+            # Remove da tabela advogados
+            db.session.delete(advogado)
+            db.session.commit()
+
+            return jsonify({"status": "advogado removido e movido para advogados_excluidos"}), 200
+
+        return jsonify({"status": "mensagem ignorada"}), 200
+
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
