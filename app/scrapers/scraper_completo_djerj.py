@@ -15,6 +15,9 @@ from collections import defaultdict
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
@@ -157,9 +160,9 @@ def enviar_whatsapp(telefone: str, mensagem: str) -> bool:
     finally:
         time.sleep(2.0)
 
-# ===================== DOWNLOAD / CACHE OTIMIZADO =====================
+# ===================== DOWNLOAD COM SOLUÇÃO HÍBRIDA =====================
 def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
-    """Baixa o PDF durante a sessão do Selenium com melhor tratamento de erro."""
+    """Baixa o PDF durante a sessão do Selenium com WebDriverWait inteligente."""
     destino = caminho_pdf_cache(dt, caderno)
     if os.path.exists(destino) and os.path.getsize(destino) > 0:
         size_mb = os.path.getsize(destino) / (1024 * 1024)
@@ -175,82 +178,128 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument(f"--user-agent={USER_AGENT}")
-    chrome_options.add_argument("--timeout=30000")
+    
+    # ✅ CONFIGURAÇÕES CRÍTICAS PARA ESTABILIDADE
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-software-rasterizer")
+    chrome_options.add_argument("--remote-debugging-port=0")  # ✅ IMPORTANTE!
+    chrome_options.add_argument("--disable-setuid-sandbox")
+    
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
 
     driver = webdriver.Chrome(options=chrome_options)
+    
     try:
         url = f"https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={dt.strftime('%d/%m/%Y')}&caderno={caderno}&pagina=-1"
         driver.get(url)
-        time.sleep(6)
-
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        
+        # ✅ WEBDRIVERWAIT INTELIGENTE
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
+        
+        # ✅ Pequeno sleep adicional para garantir (conservador)
+        time.sleep(2)
+        
+        iframes = WebDriverWait(driver, 15).until(
+            EC.presence_of_all_elements_located((By.TAG_NAME, "iframe"))
+        )
+        
+        logger.info(f"Encontrados {len(iframes)} iframes na página")
+        
         for iframe in iframes:
             src = iframe.get_attribute("src") or ""
             if "pdf.aspx" not in src:
                 continue
 
-            driver.switch_to.frame(iframe)
-            time.sleep(3)
+            try:
+                # ✅ ABORDAGEM SUPERIOR COM WEBDRIVERWAIT
+                WebDriverWait(driver, 15).until(
+                    EC.frame_to_be_available_and_switch_to_it(iframe)
+                )
+                
+                # ✅ Wait para conteúdo dentro do iframe
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                
+                # ✅ Pequena pausa para JavaScript carregar
+                time.sleep(2)
 
-            html = driver.page_source or ""
-            candidates = set()
-            for pat in (
-                r"(?:['\"])((?:/)?temp/[^\"']+?\.pdf)(?:['\"])",
-                r"(?:filename=)([^&\"']+?\.pdf)",
-                r"openPDF\('([^']+?\.pdf)'\)",
-            ):
-                for m in re.findall(pat, html, flags=re.IGNORECASE):
-                    candidates.add(m.strip())
+                html = driver.page_source or ""
+                candidates = set()
+                for pat in (
+                    r"(?:['\"])((?:/)?temp/[^\"']+?\.pdf)(?:['\"])",
+                    r"(?:filename=)([^&\"']+?\.pdf)",
+                    r"openPDF\('([^']+?\.pdf)'\)",
+                ):
+                    for m in re.findall(pat, html, flags=re.IGNORECASE):
+                        candidates.add(m.strip())
 
-            if not candidates:
+                if not candidates:
+                    driver.switch_to.default_content()
+                    continue
+
+                logger.info(f"URLs candidatas ({len(candidates)}): {list(candidates)[:3]}{'...' if len(candidates)>3 else ''}")
+
+                # ✅ Download com session
+                cookies = driver.get_cookies()
+                session = requests.Session()
+                for c in cookies:
+                    try:
+                        session.cookies.set(c["name"], c["value"])
+                    except Exception:
+                        pass
+
+                headers = {
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/pdf, */*",
+                    "Referer": driver.current_url,
+                    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+                }
+
+                for path in candidates:
+                    clean_path = path.lstrip("/").replace("consultadje/", "").strip()
+                    if not clean_path.lower().startswith("temp/"):
+                        clean_path = f"temp/{clean_path}"
+
+                    pdf_url = f"https://www3.tjrj.jus.br/consultadje/{clean_path}"
+                    logger.info(f"🎯 Tentando URL: {pdf_url}")
+
+                    try:
+                        response = session.get(pdf_url, headers=headers, timeout=30)
+                        logger.info(f"📊 Status: {response.status_code}, bytes: {len(response.content)}")
+                        
+                        if response.status_code == 200 and response.content.startswith(b"%PDF"):
+                            os.makedirs(os.path.dirname(destino), exist_ok=True)
+                            with open(destino, "wb") as f:
+                                f.write(response.content)
+                            size_mb = len(response.content) / (1024 * 1024)
+                            logger.info(f"💾 PDF salvo ({size_mb:.1f}MB): {destino}")
+                            return destino
+                            
+                    except Exception as e:
+                        logger.warning(f"Falha ao baixar candidato: {e}")
+                        continue
+
+                driver.switch_to.default_content()
+
+            except TimeoutException:
+                logger.warning("Timeout ao acessar iframe. Continuando...")
                 driver.switch_to.default_content()
                 continue
-
-            logger.info(f"URLs candidatas ({len(candidates)}): {list(candidates)[:3]}{'...' if len(candidates)>3 else ''}")
-
-            cookies = driver.get_cookies()
-            session = requests.Session()
-            for c in cookies:
-                try:
-                    session.cookies.set(c["name"], c["value"])
-                except Exception:
-                    pass
-
-            headers = {
-                "User-Agent": USER_AGENT,
-                "Accept": "application/pdf, */*",
-                "Referer": driver.current_url,
-                "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-            }
-
-            for path in candidates:
-                clean_path = path.lstrip("/").replace("consultadje/", "").strip()
-                if not clean_path.lower().startswith("temp/"):
-                    clean_path = f"temp/{clean_path}"
-
-                pdf_url = f"https://www3.tjrj.jus.br/consultadje/{clean_path}"
-                logger.info(f"Tentando URL: {pdf_url}")
-
-                try:
-                    response = session.get(pdf_url, headers=headers, timeout=30)
-                    logger.info(f"Status: {response.status_code}, bytes: {len(response.content)}")
-                    
-                    if response.status_code == 200 and response.content.startswith(b"%PDF"):
-                        os.makedirs(os.path.dirname(destino), exist_ok=True)
-                        with open(destino, "wb") as f:
-                            f.write(response.content)
-                        size_mb = len(response.content) / (1024 * 1024)
-                        logger.info(f"PDF salvo ({size_mb:.1f}MB): {destino}")
-                        return destino
-                        
-                except Exception as e:
-                    logger.warning(f"Falha ao baixar candidato: {e}")
-
-            driver.switch_to.default_content()
+            except Exception as e:
+                logger.warning(f"Erro no iframe: {e}")
+                driver.switch_to.default_content()
+                continue
 
         logger.error("Nenhum PDF válido encontrado")
         return None
         
+    except TimeoutException:
+        logger.error("Timeout geral - página não carregou")
+        return None
     except Exception as e:
         logger.error(f"Erro durante download: {e}")
         return None
