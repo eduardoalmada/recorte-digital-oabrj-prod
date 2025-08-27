@@ -1,4 +1,4 @@
-# app/scrapers/scraper_completo_djerj.py (Versão Final Otimizada)
+# app/scrapers/scraper_completo_djerj.py (Versão Final Otimizada e Corrigida)
 
 import os
 import re
@@ -52,7 +52,7 @@ root_logger.setLevel(logging.INFO)
 root_logger.addHandler(handler)
 logger = logging.getLogger(__name__)
 
-# ===================== CONFIGURAÇÕES =====================
+# ===================== CONFIGURAÇões =====================
 USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 MAX_RETRIES = 3
 WHATSAPP_THREADS = int(os.getenv("WHATSAPP_THREADS", "8"))
@@ -145,71 +145,77 @@ def enviar_whatsapp_single(telefone: str, mensagem: str) -> bool:
         logger.error(f"Erro WhatsApp: {e}")
         return False
 
-def enviar_notificacao_individual(mencoes: list, dt: date, caderno: str) -> int:
+def enviar_notificacao_individual(mencoes: list, dt: date, caderno: str, app) -> int:
     """Envia mensagem WhatsApp individual com opção de CANCELAR."""
-    advogado = mencoes[0]["advogado"]
-    if not getattr(advogado, "whatsapp", None): 
-        return 0
-    
-    qtd_mencoes = len(mencoes)
-    palavra_mencao = "menção" if qtd_mencoes == 1 else "menções"
-    
-    # Emojis por caderno
-    CADERNO_EMOJIS = {
-        "E": "📘",
-        "ADMINISTRATIVO": "📗", 
-        "JUDICIARIO": "📕"
-    }
-    emoji_caderno = CADERNO_EMOJIS.get(caderno.upper(), "📋")
-    
-    # Cria dicionário de links únicos por página
-    paginas_links = {m["pagina"]: m["link"] for m in mencoes}
-    paginas = sorted(paginas_links.keys())
-    
-    # Construção da mensagem
-    mensagem = (
-        f"{emoji_caderno} *RECORTE DIGITAL - OAB/RJ* {emoji_caderno}\n"
-        f"{'-'*40}\n\n"
-        f"📌 *Advogado:* {advogado.nome_completo}\n"
-        f"📅 *Diário Oficial:* {dt.strftime('%d/%m/%Y')}\n"
-        f"🗂️ *Caderno:* {caderno}\n"
-        f"• *{qtd_mencoes} {palavra_mencao}*\n"
-        f"• *Páginas:* {', '.join(map(str, paginas))}\n\n"
-    )
-    
-    # Exemplos das menções (máximo 2)
-    if len(mencoes) > 0:
-        mensagem += "*📖 PRINCIPAIS MENCÕES:*\n"
-        for i, mencao in enumerate(mencoes[:2], 1):
-            contexto_limpo = mencao["contexto"].replace('"', '').replace('*', '').strip()
-            mensagem += f"*{i}. Pág. {mencao['pagina']}:*\n"
-            mensagem += f'"{contexto_limpo[:160]}{"..." if len(contexto_limpo) > 160 else ""}"\n\n'
-    
-    # Links diretos (máximo 5)
-    mensagem += "*🔗 LINKS DIRETOS:*\n"
-    for pagina, link in list(paginas_links.items())[:5]:
-        mensagem += f"• 📄 Pág. {pagina}: {link}\n"
-    if len(paginas_links) > 5:
-        mensagem += f"• ... e mais {len(paginas_links) - 5} páginas\n"
-    
-    # Rodapé com opção de cancelamento
-    mensagem += (
-        f"{'-'*40}\n"
-        f"📢 *Recorte Digital OAB/RJ*\n"
-        f"Receba suas publicações de forma rápida e prática.\n\n"
-        f"❌ Caso não deseje mais receber este serviço, responda *CANCELAR* a este WhatsApp.\n"
-        f"*🤝 EQUIPE OAB/RJ*"
-    )
-    
-    if enviar_whatsapp_single(advogado.whatsapp, mensagem):
-        return 1
-    return 0
+    with app.app_context():  # ✅ CORREÇÃO: Contexto de aplicação
+        try:
+            advogado = mencoes[0]["advogado"]
+            if not getattr(advogado, "whatsapp", None): 
+                return 0
+            
+            qtd_mencoes = len(mencoes)
+            palavra_mencao = "menção" if qtd_mencoes == 1 else "menções"
+            
+            # Emojis por caderno
+            CADERNO_EMOJIS = {
+                "E": "📘",
+                "ADMINISTRATIVO": "📗", 
+                "JUDICIARIO": "📕"
+            }
+            emoji_caderno = CADERNO_EMOJIS.get(caderno.upper(), "📋")
+            
+            # Cria dicionário de links únicos por página
+            paginas_links = {m["pagina"]: m["link"] for m in mencoes}
+            paginas = sorted(paginas_links.keys())
+            
+            # Construção da mensagem
+            mensagem = (
+                f"{emoji_caderno} *RECORTE DIGITAL - OAB/RJ* {emoji_caderno}\n"
+                f"{'-'*40}\n\n"
+                f"📌 *Advogado:* {advogado.nome_completo}\n"
+                f"📅 *Diário Oficial:* {dt.strftime('%d/%m/%Y')}\n"
+                f"🗂️ *Caderno:* {caderno}\n"
+                f"• *{qtd_mencoes} {palavra_mencao}*\n"
+                f"• *Páginas:* {', '.join(map(str, paginas))}\n\n"
+            )
+            
+            # Exemplos das menções (máximo 2)
+            if len(mencoes) > 0:
+                mensagem += "*📖 PRINCIPAIS MENCÕES:*\n"
+                for i, mencao in enumerate(mencoes[:2], 1):
+                    contexto_limpo = mencao["contexto"].replace('"', '').replace('*', '').strip()
+                    mensagem += f"*{i}. Pág. {mencao['pagina']}:*\n"
+                    mensagem += f'"{contexto_limpo[:160]}{"..." if len(contexto_limpo) > 160 else ""}"\n\n'
+            
+            # Links diretos (máximo 5)
+            mensagem += "*🔗 LINKS DIRETOS:*\n"
+            for pagina, link in list(paginas_links.items())[:5]:
+                mensagem += f"• 📄 Pág. {pagina}: {link}\n"
+            if len(paginas_links) > 5:
+                mensagem += f"• ... e mais {len(paginas_links) - 5} páginas\n"
+            
+            # Rodapé com opção de cancelamento
+            mensagem += (
+                f"{'-'*40}\n"
+                f"📢 *Recorte Digital OAB/RJ*\n"
+                f"Receba suas publicações de forma rápida e prática.\n\n"
+                f"❌ Caso não deseje mais receber este serviço, responda *CANCELAR* a este WhatsApp.\n"
+                f"*🤝 EQUIPE OAB/RJ*"
+            )
+            
+            if enviar_whatsapp_single(advogado.whatsapp, mensagem):
+                return 1
+            return 0
+            
+        except Exception as e:
+            logger.error(f"Erro ao enviar notificação individual: {e}")
+            return 0
 
-def enviar_notificacoes_paralelo(por_advogado: dict, dt: date, caderno: str) -> int:
+def enviar_notificacoes_paralelo(por_advogado: dict, dt: date, caderno: str, app) -> int:
     """Envia notificações em paralelo com ThreadPoolExecutor."""
     total_msgs = 0
     with ThreadPoolExecutor(max_workers=WHATSAPP_THREADS) as executor:
-        futures = [executor.submit(enviar_notificacao_individual, mencoes, dt, caderno) 
+        futures = [executor.submit(enviar_notificacao_individual, mencoes, dt, caderno, app) 
                   for mencoes in por_advogado.values() if mencoes]
         
         for future in futures:
@@ -409,7 +415,8 @@ def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes
         logger.error(f"Erro ao persistir: {e}")
         return None
 
-def processar_caderno_do_dia(dt: date, caderno: str, advogados: List[Advogado], driver: webdriver.Chrome) -> Tuple[int, int]:
+def processar_caderno_do_dia(dt: date, caderno: str, advogados: List[Advogado], driver: webdriver.Chrome, app) -> Tuple[int, int]:
+    """Processa um único caderno do diário oficial e retorna (mencoes, mensagens)."""
     logger.info(f"\n===== CADERNO: {caderno} =====")
     q = DiarioOficial.query.filter_by(data_publicacao=dt)
     if "caderno" in (c.name for c in DiarioOficial.__table__.columns): 
@@ -425,68 +432,69 @@ def processar_caderno_do_dia(dt: date, caderno: str, advogados: List[Advogado], 
     
     total_mencoes, por_advogado = processar_pdf(dt, caderno, caminho, advogados)
     if total_mencoes == 0:
-        logger.info("Nenhuma menção encontrada. Pulando persistência.")
+        logger.info("Nenhuna menção encontrada. Pulando persistência.")
         return 0, 0
     
     diario = persistir_resultados(dt, caderno, caminho, total_mencoes, por_advogado)
     if not diario: 
         return 0, 0
     
-    msgs_enviadas = enviar_notificacoes_paralelo(por_advogado, dt, caderno)
+    msgs_enviadas = enviar_notificacoes_paralelo(por_advogado, dt, caderno, app)  # ✅ CORREÇÃO: Passa app
     return total_mencoes, msgs_enviadas
 
 # ===================== ORQUESTRAÇÃO TURBINADA =====================
 def executar_scraper_completo():
-    agora_sp = datetime.now(TZ_SP)
-    dt = agora_sp.date()
-    inicio = time.time()
-    logger.info(f"Processando DJERJ de {dt.strftime('%d/%m/%Y')}")
+    app = create_app()  # ✅ CORREÇÃO: Cria app aqui
     
-    advogados = Advogado.query.all()
-    logger.info(f"📊 {len(advogados)} advogados carregados")
-    
-    cadernos = obter_cadernos()
-    logger.info(f"Cadernos: {', '.join(cadernos)}")
-    
-    total_geral_mencoes = 0
-    total_geral_msgs = 0
+    with app.app_context():
+        agora_sp = datetime.now(TZ_SP)
+        dt = agora_sp.date()
+        inicio = time.time()
+        logger.info(f"Processando DJERJ de {dt.strftime('%d/%m/%Y')}")
+        
+        advogados = Advogado.query.all()
+        logger.info(f"📊 {len(advogados)} advogados carregados")
+        
+        cadernos = obter_cadernos()
+        logger.info(f"Cadernos: {', '.join(cadernos)}")
+        
+        total_geral_mencoes = 0
+        total_geral_msgs = 0
 
-    # Configuração única do Chrome
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument(f"--user-agent={USER_AGENT}")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-software-rasterizer")
-    chrome_options.add_argument("--remote-debugging-port=0")
-    chrome_options.add_argument("--disable-setuid-sandbox")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
-    driver = webdriver.Chrome(options=chrome_options)
-    
-    try:
-        for caderno in cadernos:
-            try:
-                mencoes, msgs = processar_caderno_do_dia(dt, caderno, advogados, driver)
-                total_geral_mencoes += mencoes
-                total_geral_msgs += msgs
-            except Exception as e:
-                logger.error(f"Erro ao processar caderno {caderno}: {e}")
-                continue
-    except Exception as e:
-        logger.error(f"Erro geral na execução: {e}")
-    finally:
-        driver.quit()
+        # Configuração única do Chrome
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument(f"--user-agent={USER_AGENT}")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--remote-debugging-port=0")
+        chrome_options.add_argument("--disable-setuid-sandbox")
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        driver = webdriver.Chrome(options=chrome_options)
+        
+        try:
+            for caderno in cadernos:
+                try:
+                    mencoes, msgs = processar_caderno_do_dia(dt, caderno, advogados, driver, app)  # ✅ CORREÇÃO: Passa app
+                    total_geral_mencoes += mencoes
+                    total_geral_msgs += msgs
+                except Exception as e:
+                    logger.error(f"Erro ao processar caderno {caderno}: {e}")
+                    continue
+        except Exception as e:
+            logger.error(f"Erro geral na execução: {e}")
+        finally:
+            driver.quit()
 
-    dur = time.time() - inicio
-    logger.info("="*50)
-    logger.info(f"✅ Concluído em {dur:.2f}s | Menções: {total_geral_mencoes} | Notificações: {total_geral_msgs}")
+        dur = time.time() - inicio
+        logger.info("="*50)
+        logger.info(f"✅ Concluído em {dur:.2f}s | Menções: {total_geral_mencoes} | Notificações: {total_geral_msgs}")
 
 if __name__ == "__main__":
-    app = create_app()
-    with app.app_context():
-        executar_scraper_completo()
+    executar_scraper_completo()
