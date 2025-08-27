@@ -9,7 +9,7 @@ import logging
 import requests
 from io import StringIO
 from datetime import datetime, date
-from typing import List, Dict, Any, Set, Tuple
+from typing import List, Dict, Any, Set, Tuple, Match
 from collections import defaultdict
 
 from selenium import webdriver
@@ -25,7 +25,11 @@ from app import db, create_app
 from app.models import DiarioOficial, Advogado, AdvogadoPublicacao
 
 # ===================== CONFIGURAÇÃO DE LOGGING =====================
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 # ===================== CONFIGURAÇÕES =====================
@@ -41,9 +45,11 @@ def obter_cadernos() -> List[str]:
 
 def caminho_pdf_cache(dt: date, caderno: str) -> str:
     """Retorna caminho do cache para o PDF."""
+    cache_dir = os.getenv("CACHE_DIR", "/tmp")
+    os.makedirs(cache_dir, exist_ok=True)
     d = dt.strftime("%Y%m%d")
     safe_caderno = re.sub(r"[^A-Za-z0-9_-]+", "_", caderno.upper())
-    return f"/tmp/diario_{d}_{safe_caderno}.pdf"
+    return f"{cache_dir}/diario_{d}_{safe_caderno}.pdf"
 
 # ===================== UTILIDADES DE TEXTO AVANÇADAS =====================
 def normalizar_texto(texto: str) -> str:
@@ -88,7 +94,7 @@ def criar_regex_nome_flexivel(nome_completo: str) -> str:
     
     return r'\s+'.join(regex_partes)
 
-def buscar_mencoes_advogado(texto_norm: str, advogado: Advogado) -> List[re.Match]:
+def buscar_mencoes_advogado(texto_norm: str, advogado: Advogado) -> List[Match]:
     """Busca todas as menções válidas do advogado no texto normalizado."""
     resultados = []
     
@@ -106,30 +112,23 @@ def buscar_mencoes_advogado(texto_norm: str, advogado: Advogado) -> List[re.Matc
     
     return resultados
 
-def extract_text_from_pdf(pdf_path: str) -> Tuple[str, List[str]]:
-    """Extrai texto completo do PDF e retorna texto normalizado + páginas individuais."""
-    texto_completo = ""
-    paginas_texto = []
-    
-    with open(pdf_path, "rb") as fp:
-        pages = list(PDFPage.get_pages(fp))
-        
-        for page in pages:
-            resource_manager = PDFResourceManager()
-            buf = StringIO()
-            converter = TextConverter(resource_manager, buf, laparams=LAParams())
-            interpreter = PDFPageInterpreter(resource_manager, converter)
-            
-            try:
-                interpreter.process_page(page)
-                texto_pagina = buf.getvalue()
-                paginas_texto.append(texto_pagina)
-                texto_completo += texto_pagina + "\n"
-            finally:
-                converter.close()
-                buf.close()
-    
-    return normalizar_texto(texto_completo), paginas_texto
+def extract_text_from_page(page) -> str:
+    """Extrai texto de uma única página PDF de forma eficiente."""
+    resource_manager = PDFResourceManager()
+    buf = StringIO()
+    converter = TextConverter(resource_manager, buf, laparams=LAParams())
+    interpreter = PDFPageInterpreter(resource_manager, converter)
+    try:
+        interpreter.process_page(page)
+        return buf.getvalue()
+    finally:
+        converter.close()
+        buf.close()
+
+def _filter_kwargs(model_cls, **kwargs):
+    """Mantém apenas colunas que existem no model."""
+    cols = set(c.name for c in model_cls.__table__.columns)
+    return {k: v for k, v in kwargs.items() if k in cols}
 
 # ===================== WHATSAPP OTIMIZADO =====================
 def enviar_whatsapp(telefone: str, mensagem: str) -> bool:
@@ -163,7 +162,8 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
     """Baixa o PDF durante a sessão do Selenium com melhor tratamento de erro."""
     destino = caminho_pdf_cache(dt, caderno)
     if os.path.exists(destino) and os.path.getsize(destino) > 0:
-        logger.info(f"Cache encontrado para {dt.strftime('%d/%m/%Y')} [{caderno}]: {destino}")
+        size_mb = os.path.getsize(destino) / (1024 * 1024)
+        logger.info(f"Cache encontrado ({size_mb:.1f}MB): {destino}")
         return destino
 
     logger.info(f"Buscando PDF para {dt.strftime('%d/%m/%Y')} [caderno={caderno}]...")
@@ -175,6 +175,7 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument(f"--user-agent={USER_AGENT}")
+    chrome_options.add_argument("--timeout=30000")
 
     driver = webdriver.Chrome(options=chrome_options)
     try:
@@ -219,6 +220,7 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
                 "User-Agent": USER_AGENT,
                 "Accept": "application/pdf, */*",
                 "Referer": driver.current_url,
+                "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
             }
 
             for path in candidates:
@@ -234,10 +236,11 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
                     logger.info(f"Status: {response.status_code}, bytes: {len(response.content)}")
                     
                     if response.status_code == 200 and response.content.startswith(b"%PDF"):
-                        os.makedirs("/tmp", exist_ok=True)
+                        os.makedirs(os.path.dirname(destino), exist_ok=True)
                         with open(destino, "wb") as f:
                             f.write(response.content)
-                        logger.info(f"PDF salvo em: {destino}")
+                        size_mb = len(response.content) / (1024 * 1024)
+                        logger.info(f"PDF salvo ({size_mb:.1f}MB): {destino}")
                         return destino
                         
                 except Exception as e:
@@ -252,105 +255,66 @@ def baixar_pdf_durante_sessao(dt: date, caderno: str) -> str | None:
         logger.error(f"Erro durante download: {e}")
         return None
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        except:
+            pass
 
-# ===================== PROCESSAMENTO OTIMIZADO =====================
-def processar_pdf_otimizado(dt: date, caderno: str, caminho_pdf: str) -> Tuple[int, Dict[int, List[Dict]]]:
-    """Processamento otimizado: extrai texto uma vez e busca todos os advogados."""
+# ===================== PROCESSAMENTO CORRIGIDO =====================
+def processar_pdf(dt: date, caderno: str, caminho_pdf: str, advogados: List[Advogado]) -> Tuple[int, Dict[int, List[Dict]]]:
+    """Processamento confiável página por página com numeração correta."""
     total_mencoes = 0
     por_advogado = defaultdict(list)
 
-    # Carrega todos os advogados
-    advogados = Advogado.query.all()
-    logger.info(f"{len(advogados)} advogados cadastrados. Buscando menções...")
+    logger.info(f"Processando {len(advogados)} advogados no caderno {caderno}...")
 
-    # Extrai texto completo de uma vez (mais eficiente)
-    texto_norm_completo, paginas_texto = extract_text_from_pdf(caminho_pdf)
-    logger.info(f"Processando {len(paginas_texto)} páginas do caderno {caderno}...")
+    with open(caminho_pdf, "rb") as fp:
+        pages = list(PDFPage.create_pages(fp))
+        logger.info(f"Processando {len(pages)} páginas do caderno {caderno}...")
 
-    # Pré-processa padrões OAB para busca rápida
-    padroes_oab = []
-    for advogado in advogados:
-        if advogado.numero_oab:
-            oab_pattern = criar_regex_oab(advogado.numero_oab)
-            padroes_oab.append((advogado, oab_pattern))
+        for page_num, page in enumerate(pages, 1):
+            try:
+                raw_text = extract_text_from_page(page)
+                if not raw_text or len(raw_text.strip()) < 50:
+                    logger.debug(f"Página {page_num} vazia ou muito curta. Pulando.")
+                    continue
 
-    # Busca por ocorrências de OAB primeiro (mais específico)
-    ocorrencias_potenciais = []
-    for advogado, oab_pattern in padroes_oab:
-        for match in re.finditer(oab_pattern, texto_norm_completo, re.IGNORECASE):
-            ocorrencias_potenciais.append((match.start(), match.end(), advogado))
+                texto_norm = normalizar_texto(raw_text)
+                logger.debug(f"Página {page_num}: {len(raw_text)} chars -> {len(texto_norm)} norm")
 
-    # Para cada ocorrência potencial, verifica se o nome está próximo
-    for start, end, advogado in ocorrencias_potenciais:
-        # Verifica contexto around da OAB
-        ctx_ini = max(0, start - 100)
-        ctx_fim = min(len(texto_norm_completo), end + 100)
-        contexto = texto_norm_completo[ctx_ini:ctx_fim]
-        
-        nome_pattern = criar_regex_nome_flexivel(advogado.nome_completo)
-        if re.search(nome_pattern, contexto, re.IGNORECASE):
-            # Encontrou correspondência! Descobre a página
-            pagina = 1
-            acumulado = 0
-            for i, texto_pagina in enumerate(paginas_texto, 1):
-                acumulado += len(texto_pagina)
-                if start <= acumulado:
-                    pagina = i
-                    break
+                for advogado in advogados:
+                    matches = buscar_mencoes_advogado(texto_norm, advogado)
+                    
+                    for match in matches:
+                        total_mencoes += 1
+                        start, end = match.span()
+                        
+                        ctx_ini = max(0, start - 120)
+                        ctx_fim = min(len(texto_norm), end + 120)
+                        contexto = texto_norm[ctx_ini:ctx_fim].strip()
 
-            total_mencoes += 1
-            contexto_completo = texto_norm_completo[max(0, start-120):min(len(texto_norm_completo), end+120)].strip()
-            
-            mencao = {
-                "advogado": advogado,
-                "pagina": pagina,
-                "contexto": contexto_completo,
-                "link": f"https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={dt.strftime('%d/%m/%Y')}&caderno={caderno}&pagina={pagina}",
-                "data_publicacao": dt,
-                "caderno": caderno,
-            }
+                        link_publicacao = f"https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={dt.strftime('%d/%m/%Y')}&caderno={caderno}&pagina={page_num}"
 
-            por_advogado[advogado.id].append(mencao)
-            logger.info(f"Menção confirmada: {advogado.nome_completo} - Página {pagina}")
+                        mencao = {
+                            "advogado": advogado,
+                            "pagina": page_num,
+                            "contexto": contexto,
+                            "link": link_publicacao,
+                            "data_publicacao": dt,
+                            "caderno": caderno,
+                        }
 
-    # Busca fallback para advogados sem OAB
-    for advogado in advogados:
-        if not advogado.numero_oab:
-            matches = buscar_mencoes_advogado(texto_norm_completo, advogado)
-            for match in matches:
-                total_mencoes += 1
-                start, end = match.span()
-                
-                # Descobre a página
-                pagina = 1
-                acumulado = 0
-                for i, texto_pagina in enumerate(paginas_texto, 1):
-                    acumulado += len(texto_pagina)
-                    if start <= acumulado:
-                        pagina = i
-                        break
+                        por_advogado[advogado.id].append(mencao)
+                        logger.info(f"Menção confirmada: {advogado.nome_completo} - Página {page_num}")
 
-                contexto = texto_norm_completo[max(0, start-120):min(len(texto_norm_completo), end+120)].strip()
-                
-                mencao = {
-                    "advogado": advogado,
-                    "pagina": pagina,
-                    "contexto": contexto,
-                    "link": f"https://www3.tjrj.jus.br/consultadje/consultaDJE.aspx?dtPub={dt.strftime('%d/%m/%Y')}&caderno={caderno}&pagina={pagina}",
-                    "data_publicacao": dt,
-                    "caderno": caderno,
-                }
+                if page_num % 10 == 0:
+                    logger.info(f"Páginas processadas: {page_num}/{len(pages)}")
 
-                por_advogado[advogado.id].append(mencao)
-                logger.info(f"Menção fallback: {advogado.nome_completo} - Página {pagina}")
+            except Exception as e:
+                logger.error(f"Erro ao processar página {page_num}: {e}")
+                continue
 
     return total_mencoes, dict(por_advogado)
-
-def _filter_kwargs(model_cls, **kwargs):
-    """Mantém apenas colunas que existem no model."""
-    cols = set(c.name for c in model_cls.__table__.columns)
-    return {k: v for k, v in kwargs.items() if k in cols}
 
 def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes: int, por_advogado: dict):
     """Persiste resultados no banco de dados."""
@@ -359,7 +323,7 @@ def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes
         q = q.filter_by(caderno=caderno)
     if q.first():
         logger.warning(f"Diário já existente para {dt.strftime('%d/%m/%Y')} [{caderno}]. Pulando persistência.")
-        return q.first()
+        return None
 
     try:
         diario_kwargs = _filter_kwargs(
@@ -401,7 +365,7 @@ def persistir_resultados(dt: date, caderno: str, caminho_pdf: str, total_mencoes
     except Exception as e:
         db.session.rollback()
         logger.error(f"Erro ao persistir resultados: {e}")
-        raise
+        return None
 
 # ===================== NOTIFICAÇÕES AGRUPADAS =====================
 def enviar_notificacoes_agrupadas(por_advogado: dict, dt: date, caderno: str) -> int:
@@ -433,9 +397,7 @@ def enviar_notificacoes_agrupadas(por_advogado: dict, dt: date, caderno: str) ->
             mensagem += f"*📖 Exemplo {i} (Página {mencao['pagina']}):*\n"
             mensagem += f'"{mencao["contexto"][:200]}{"..." if len(mencao["contexto"]) > 200 else ""}"\n\n'
 
-        mensagem += (
-            f"*🔗 Links diretos:*\n"
-        )
+        mensagem += f"*🔗 Links diretos:*\n"
         
         # Adiciona links únicos por página
         paginas_links = {}
@@ -457,7 +419,42 @@ def enviar_notificacoes_agrupadas(por_advogado: dict, dt: date, caderno: str) ->
     logger.info(f"Notificações agrupadas enviadas: {total_msgs}")
     return total_msgs
 
-# ===================== ORQUESTRAÇÃO PRINCIPAL =====================
+# ===================== ORQUESTRAÇÃO REFATORADA =====================
+def processar_caderno_do_dia(dt: date, caderno: str, advogados: List[Advogado]) -> Tuple[int, int]:
+    """Processa um único caderno do diário oficial e retorna (mencoes, mensagens)."""
+    logger.info(f"\n===== CADERNO: {caderno} =====")
+
+    # Verifica se já foi processado
+    q = DiarioOficial.query.filter_by(data_publicacao=dt)
+    if "caderno" in (c.name for c in DiarioOficial.__table__.columns):
+        q = q.filter_by(caderno=caderno)
+    if q.first():
+        logger.warning(f"Diário já processado para {dt.strftime('%d/%m/%Y')} [{caderno}]. Pulando.")
+        return 0, 0
+
+    # Download do PDF
+    caminho = baixar_pdf_durante_sessao(dt, caderno)
+    if not caminho:
+        logger.error(f"Falha ao obter PDF para caderno {caderno}")
+        return 0, 0
+
+    # Processamento
+    total_mencoes, por_advogado = processar_pdf(dt, caderno, caminho, advogados)
+
+    if total_mencoes == 0:
+        logger.info("Nenhuma menção encontrada. Pulando persistência.")
+        return 0, 0
+
+    # Persistência
+    diario = persistir_resultados(dt, caderno, caminho, total_mencoes, por_advogado)
+    if not diario:
+        return 0, 0
+
+    # Notificações
+    msgs_enviadas = enviar_notificacoes_agrupadas(por_advogado, dt, caderno)
+
+    return total_mencoes, msgs_enviadas
+
 def executar_scraper_completo():
     """Função principal de orquestração do scraper."""
     dt = datetime.now().date()
@@ -465,37 +462,25 @@ def executar_scraper_completo():
     logger.info(f"Processando DJERJ de {dt.strftime('%d/%m/%Y')}")
     logger.info(f"Início: {datetime.now().strftime('%H:%M:%S')}")
 
+    # Carrega advogados UMA vez só
+    advogados = Advogado.query.all()
+    logger.info(f"📊 {len(advogados)} advogados carregados para processamento")
+
     cadernos = obter_cadernos()
     logger.info(f"Cadernos configurados: {', '.join(cadernos)}")
 
     total_geral_mencoes = 0
     total_geral_msgs = 0
 
+    # Processa cada caderno
     for caderno in cadernos:
-        logger.info(f"\n===== CADERNO: {caderno} =====")
-
-        # Verifica se já foi processado
-        q = DiarioOficial.query.filter_by(data_publicacao=dt)
-        if "caderno" in (c.name for c in DiarioOficial.__table__.columns):
-            q = q.filter_by(caderno=caderno)
-        if q.first():
-            logger.warning(f"Diário já processado para {dt.strftime('%d/%m/%Y')} [{caderno}]. Pulando.")
+        try:
+            mencoes, msgs = processar_caderno_do_dia(dt, caderno, advogados)
+            total_geral_mencoes += mencoes
+            total_geral_msgs += msgs
+        except Exception as e:
+            logger.error(f"Erro ao processar caderno {caderno}: {e}")
             continue
-
-        # Download do PDF
-        caminho = baixar_pdf_durante_sessao(dt, caderno)
-        if not caminho:
-            logger.error(f"Falha ao obter PDF para caderno {caderno}")
-            continue
-
-        # Processamento otimizado
-        total_mencoes, por_advogado = processar_pdf_otimizado(dt, caderno, caminho)
-        total_geral_mencoes += total_mencoes
-
-        # Persistência e notificações
-        diario = persistir_resultados(dt, caderno, caminho, total_mencoes, por_advogado)
-        msgs_enviadas = enviar_notificacoes_agrupadas(por_advogado, dt, caderno)
-        total_geral_msgs += msgs_enviadas
 
     # Relatório final
     dur = time.time() - inicio
