@@ -23,6 +23,7 @@ class DiarioOficial(db.Model):
     total_publicacoes = db.Column(db.Integer, default=0)
     arquivo_pdf = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    caderno = db.Column(db.String(255), nullable=True)  # ✅ ADICIONADO AQUI
 
     # ✅ RELACIONAMENTO CORRETO: Removido o relationship duplicado aqui
     # O relacionamento é definido apenas no AdvogadoPublicacao
