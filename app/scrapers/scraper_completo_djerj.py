@@ -103,7 +103,9 @@ def criar_regex_nome_flexivel(nome_completo: str) -> re.Pattern:
     return re.compile(r'\s+'.join(regex_partes))
 
 def buscar_mencoes_advogado(texto_norm: str, advogado: Advogado) -> List[Match]:
+    """Busca todas as menções válidas do advogado no texto normalizado."""
     resultados = []
+    
     if advogado.id not in advogado_patterns:
         advogado_patterns[advogado.id] = {
             'nome': criar_regex_nome_flexivel(advogado.nome_completo),
@@ -111,11 +113,22 @@ def buscar_mencoes_advogado(texto_norm: str, advogado: Advogado) -> List[Match]:
         }
     
     patterns = advogado_patterns[advogado.id]
+    
+    # ✅ CORREÇÃO: Busca ambas as ordens (nome + OAB e OAB + nome)
     if patterns['oab']:
-        padrao_completo = re.compile(f"({patterns['nome'].pattern})" + r".{0,80}?" + f"({patterns['oab'].pattern})")
+        # 1. Nome seguido de OAB (até 150 caracteres de distância)
+        padrao_nome_oab = f"({patterns['nome'].pattern})" + r".{0,150}?" + f"({patterns['oab'].pattern})"
+        
+        # 2. OAB seguido de nome (até 150 caracteres de distância)  
+        padrao_oab_nome = f"({patterns['oab'].pattern})" + r".{0,150}?" + f"({patterns['nome'].pattern})"
+        
+        # Combina ambos os padrões em uma única regex compilada
+        padrao_completo = re.compile(f"({padrao_nome_oab}|{padrao_oab_nome})", re.IGNORECASE)
+        
         resultados.extend(padrao_completo.finditer(texto_norm))
     else:
         resultados.extend(patterns['nome'].finditer(texto_norm))
+    
     return resultados
 
 def extract_text_from_page(page) -> str:
