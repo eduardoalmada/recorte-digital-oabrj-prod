@@ -371,11 +371,7 @@ def processar_pdf(dt: date, caderno: str, caminho_pdf: str, advogados: List[Advo
                 
                 for advogado in advogados:
                     patterns = advogado_patterns[advogado.id]
-                    if patterns['oab']:
-                        padrao_completo = re.compile(f"({patterns['nome'].pattern})" + r".{0,80}?" + f"({patterns['oab'].pattern})")
-                        matches = padrao_completo.finditer(texto_norm)
-                    else:
-                        matches = patterns['nome'].finditer(texto_norm)
+                    matches = buscar_mencoes_advogado(texto_norm, advogado)
                     
                     for match in matches:
                         total_mencoes += 1
