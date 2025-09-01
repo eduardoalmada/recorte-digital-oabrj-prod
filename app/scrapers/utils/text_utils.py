@@ -1,7 +1,8 @@
-# UTILITIES PARA PROCESSAMENTO DE TEXTO
+# app/scrapers/utils/text_utils.py
+
 import re
 import unicodedata
-from typing import List
+from typing import Pattern
 
 def normalizar_texto(texto: str) -> str:
     """Normalização robusta: acentos, espaços e case."""
@@ -12,7 +13,7 @@ def normalizar_texto(texto: str) -> str:
     texto = re.sub(r'\s+', ' ', texto)
     return texto.strip()
 
-def criar_regex_oab(numero_oab: str) -> re.Pattern:
+def criar_regex_oab(numero_oab: str) -> Pattern:
     """
     Cria regex exclusiva para OAB/RJ, garantindo que o estado esteja sempre presente.
     É robusta para variações de pontuação e ordem, usando delimitadores suaves.
@@ -48,7 +49,7 @@ def criar_regex_oab(numero_oab: str) -> re.Pattern:
     # Delimitadores suaves para evitar falsos positivos em texto bagunçado
     return re.compile(rf"(?:(?<=\W)|^)(?:{final_regex})(?:(?=\W)|$)", re.IGNORECASE)
 
-def criar_regex_nome_flexivel(nome_completo: str) -> str:
+def criar_regex_nome_flexivel(nome_completo: str) -> Pattern:
     """Cria regex que detecta nomes mesmo quando colados com texto anterior."""
     nome_norm = normalizar_texto(nome_completo)
     partes = nome_norm.split()
@@ -60,4 +61,4 @@ def criar_regex_nome_flexivel(nome_completo: str) -> str:
         else:
             regex_partes.append(r'[\s]?' + re.escape(parte))
     
-    return r'\s+'.join(regex_partes)
+    return re.compile(r'\s+'.join(regex_partes), re.IGNORECASE)
