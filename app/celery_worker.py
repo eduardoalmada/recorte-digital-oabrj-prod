@@ -26,4 +26,9 @@ if os.getenv("IS_BEAT", "false").lower() == "true":
             'task': 'app.tasks.tarefa_buscar_publicacoes',
             'schedule': crontab(hour=15, minute=0),  # 15h Brasília
         },
+        # ✅ ADICIONE ESTA NOVA TAREFA AQUI (DJEN EM HORÁRIO DIFERENTE)
+        'buscar-djen-teste': {
+            'task': 'app.tasks.tarefa_apenas_djen',
+            'schedule': crontab(hour=16, minute=30),  # 16:30h - depois do DJERJ
+        },
     }
