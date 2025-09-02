@@ -1,3 +1,4 @@
+# app/scrapers/djen/djen_scraper.py
 import logging
 from datetime import date
 from typing import Dict, List
@@ -12,7 +13,6 @@ class DJENScraper:
         self.client = DJENClient()
     
     def executar(self, data_ref: date = None) -> Dict[str, any]:
-        """Executa scraping DJEN - versão inicial simplificada"""
         data_ref = data_ref or date.today()
         
         resultados = {
@@ -24,23 +24,27 @@ class DJENScraper:
         }
         
         try:
-            # Busca publicações (implementação inicial)
+            logger.info("🚀 Iniciando scraping DJEN com Selenium")
+            
             publicacoes = self.client.buscar_publicacoes_por_data(data_ref)
             resultados['total_publicacoes'] = len(publicacoes)
             
-            if publicacoes:
-                # Processa menções (usando sua lógica existente)
+            logger.info(f"✅ DJEN - {len(publicacoes)} publicações encontradas")
+            
+            # Se encontrou publicações, processa menções
+            if publicacoes and Advogado.query.first():  # Só processa se houver advogados
                 from app.scrapers.scraper_completo_djerj import normalizar_texto
                 from app.utils.advogado_utils import buscar_mencoes_advogado
                 
                 advogados = Advogado.query.filter_by(ativo=True).all()
+                logger.info(f"🔍 Processando {len(advogados)} advogados")
                 
-                for publicacao in publicacoes:
-                    # TODO: Implementar processamento similar ao DJERJ
-                    pass
-                    
+                # TODO: Implementar lógica de matching
+                resultados['total_mencoes'] = 0
+                
         except Exception as e:
-            resultados['erros'].append(f"Erro geral: {str(e)}")
-            logger.error(f"Erro no DJENScraper: {e}")
+            error_msg = f"Erro no DJENScraper: {str(e)}"
+            resultados['erros'].append(error_msg)
+            logger.error(error_msg)
         
         return resultados
