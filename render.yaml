@@ -4,7 +4,7 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     startCommand: gunicorn main:app --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 2 --preload
-    healthCheckPath: /healthcheck
+    healthCheckPath: /healthcheck  # ✅ APENAS PARA WEB
     healthCheckTimeout: 120
     envVars:
       - key: REDIS_BROKER_URL
@@ -21,6 +21,7 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     startCommand: celery -A app.celery_worker.celery worker --loglevel=info --concurrency=1
+    # ✅ SEM HEALTHCHECK (WORKER)
     envVars:
       - key: REDIS_BROKER_URL
         sync: false
@@ -36,6 +37,7 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     startCommand: celery -A app.celery_worker.celery beat --loglevel=info
+    # ✅ SEM HEALTHCHECK (BEAT)
     envVars:
       - key: REDIS_BROKER_URL
         sync: false
