@@ -9,16 +9,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Dependências para build + Chrome
+# ✅ PRIMEIRO INSTALA WGET E DEPENDÊNCIAS
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential gcc curl unzip ca-certificates gnupg \
-    fonts-liberation libasound2 libatk-bridge2.0-0 \
-    libatk1.0-0 libcups2 libdbus-1-3 libnspr4 libnss3 \
-    libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 \
-    libgbm1 libxshmfence1 libdrm2 libxkbcommon0 && \
+    wget curl unzip ca-certificates gnupg \
+    build-essential gcc && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# ✅ CHROME + CHROMEDRIVER NO BUILDER
+# ✅ AGORA INSTALA CHROME + CHROMEDRIVER
 RUN set -eux; \
     # Chrome estável
     wget -q -O /tmp/chrome.deb \
@@ -56,6 +53,14 @@ RUN set -eux; \
     ls -lh /usr/local/bin/chromedriver; \
     chromedriver --version;
 
+# ✅ DEPOIS INSTALA AS LIBS DE DEPENDÊNCIAS
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-liberation libasound2 libatk-bridge2.0-0 \
+    libatk1.0-0 libcups2 libdbus-1-3 libnspr4 libnss3 \
+    libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 \
+    libgbm1 libxshmfence1 libdrm2 libxkbcommon0 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Instala deps Python no prefixo /install
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -82,7 +87,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ✅ COPIA TUDO DO BUILDER (SUA CORREÇÃO CRÍTICA!)
+# ✅ COPIA TUDO DO BUILDER
 COPY --from=builder /install /usr/local
 COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
 COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
@@ -100,7 +105,6 @@ COPY --chown=appuser:appuser . .
 
 EXPOSE 10000
 
-# ✅ HEALTHCHECK (SUA SUGESTÃO: pode ser condicional via render.yaml)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT:-10000}/healthcheck || exit 1
 
