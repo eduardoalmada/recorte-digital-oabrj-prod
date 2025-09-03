@@ -30,7 +30,7 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/usr/local/bin:$PATH"
 
-# 🔧 CORREÇÕES CRÍTICAS - INSTALAÇÃO SIMPLIFICADA E CONFIÁVEL
+# 🔧 INSTALAÇÃO SIMPLIFICADA E CONFIÁVEL
 RUN set -eux; \
     apt-get update; \
     # ✅ INSTALA APENAS DEPENDÊNCIAS ESSENCIAIS
@@ -42,22 +42,23 @@ RUN set -eux; \
       libxdamage1 libxrandr2 libu2f-udev \
       libgbm1 libxshmfence1 libdrm2 libxkbcommon0; \
     \
-    # ✅ CHROME ESTÁVEL - VERSÃO COMPATÍVEL
-    wget -q -O /tmp/chrome.deb \
-      "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_139.0.7258.138-1_amd64.deb"; \
-    apt-get install -y /tmp/chrome.deb; \
-    rm -f /tmp/chrome.deb; \
+    # ✅ CHROME ESTÁVEL - INSTALAÇÃO DIRETA DO REPOSITÓRIO
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -; \
+    echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends google-chrome-stable; \
     \
-    # ✅ CHROMEDRIVER - VERSÃO COMPATÍVEL FIXA
+    # ✅ CHROMEDRIVER - USA A MESMA VERSÃO DO CHROME INSTALADO
+    CHROME_VERSION=$(google-chrome --version | awk '{print $3}'); \
+    echo "Chrome version: ${CHROME_VERSION}"; \
+    \
+    # Baixa chromedriver compatível
     wget -q -O /tmp/chromedriver.zip \
-      "https://chromedriver.storage.googleapis.com/139.0.7258.138/chromedriver_linux64.zip"; \
+      "https://chromedriver.storage.googleapis.com/$(curl -s https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_VERSION%.*})/chromedriver_linux64.zip"; \
     unzip -q /tmp/chromedriver.zip -d /usr/local/bin/; \
     chmod +x /usr/local/bin/chromedriver; \
     rm -f /tmp/chromedriver.zip; \
     \
-    # ✅ VERIFICA INSTALAÇÃO
-    echo "Chrome version:"; \
-    google-chrome --version; \
     echo "Chromedriver version:"; \
     chromedriver --version; \
     \
