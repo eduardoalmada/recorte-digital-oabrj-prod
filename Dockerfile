@@ -9,9 +9,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# ✅ COPIA O chrome-libs.txt DA RAIZ PARA O BUILDER (LINHA ADICIONADA)
-COPY chrome-libs.txt /chrome-libs-fallback.txt
-
 # ✅ INSTALA TUDO + IDENTIFICA LIBS EXATAS DO CHROME
 RUN set -eux; \
     apt-get update; \
@@ -49,10 +46,6 @@ RUN set -eux; \
     ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^(/usr|/lib)' | sort -u > /chrome-libs.txt; \
     ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^(/usr|/lib)' | sort -u >> /chrome-libs.txt; \
     sort -u /chrome-libs.txt -o /chrome-libs.txt; \
-    \
-    # ✅ COMBINA COM FALLBACK (LINHA ADICIONADA)
-    cat /chrome-libs.txt /chrome-libs-fallback.txt 2>/dev/null | sort -u > /chrome-libs-complete.txt; \
-    mv /chrome-libs-complete.txt /chrome-libs.txt; \
     \
     # Python deps
     pip install --no-cache-dir --upgrade pip; \
