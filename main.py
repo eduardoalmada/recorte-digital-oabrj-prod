@@ -2,6 +2,10 @@ from flask import Flask
 from app import create_app
 from app.routes.webhook import webhook_bp  # importa o blueprint
 
+@app.route('/healthcheck')
+def healthcheck():
+    return {'status': 'healthy', 'timestamp': datetime.now().isoformat()}
+
 app = create_app()
 
 # registra o blueprint do webhook
