@@ -1,9 +1,11 @@
+# Crie um render.yaml limpo e correto
+cat > /app/render.yaml << 'EOF'
 services:
   - type: web
     name: recorte-digital-oabrj-prod
     env: docker
     dockerfilePath: ./Dockerfile
-    startCommand: gunicorn main:app --bind 0.0.0.0:${PORT:-10000}
+    startCommand: gunicorn main:app --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 2 --preload
     envVars:
       - key: REDIS_BROKER_URL
         sync: false
@@ -18,7 +20,7 @@ services:
     name: Worker-recorte-digital-oabrj-prod
     env: docker
     dockerfilePath: ./Dockerfile
-    startCommand: celery -A app.celery_worker.celery worker --loglevel=info
+    startCommand: celery -A app.celery_worker.celery worker --loglevel=info --concurrency=1
     envVars:
       - key: REDIS_BROKER_URL
         sync: false
@@ -43,53 +45,4 @@ services:
         sync: false
       - key: IMPORT_KEY
         sync: false
-services:
-  - type: web
-    name: recorte-digital-oabrj-prod
-    env: docker
-    dockerfilePath: ./Dockerfile
-    envVars:
-      - key: REDIS_BROKER_URL
-        sync: false
-      - key: SQLALCHEMY_DATABASE_URI
-        sync: false
-      - key: WHATSAPP_API_URL
-        sync: false
-      - key: IMPORT_KEY
-        sync: false
-
-  - type: worker
-    name: Worker-recorte-digital-oabrj-prod
-    env: docker
-    dockerfilePath: ./Dockerfile
-    envVars:
-      - key: REDIS_BROKER_URL
-        sync: false
-      - key: SQLALCHEMY_DATABASE_URI
-        sync: false
-      - key: WHATSAPP_API_URL
-        sync: false
-      - key: IMPORT_KEY
-        sync: false
-
-  - type: worker
-    name: recorte-digital-beat
-    env: docker
-    dockerfilePath: ./Dockerfile
-    envVars:
-      - key: REDIS_BROKER_URL
-        sync: false
-      - key: SQLALCHEMY_DATABASE_URI
-        sync: false
-      - key: WHATSAPP_API_URL
-        sync: false
-      - key: IMPORT_KEY
-        sync: false
-
-  - type: web
-    name: recorte-digital-oabrj
-    env: docker
-    buildCommand: |
-      pip install -r requirements.txt
-      flask db upgrade
-    startCommand: gunicorn main:app
+EOF
