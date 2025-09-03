@@ -54,7 +54,9 @@ cffi==1.17.1
 pycparser==2.22
 colorama==0.4.6
 typing_extensions==4.14.1
-PyPDF2>=3.0.0
-pdfminer.six
+PyPDF2==3.0.1  # ✅ VERSÃO FIXADA
+pdfminer.six==20250506  # ✅ VERSÃO FIXADA
 
-
+# ─── Dependências de Build (para segurança) ───────────────────
+setuptools==69.5.1  # ✅ EVITA PROBLEMAS DE BUILD
+wheel==0.43.0  # ✅ MELHORA PERFORMANCE DE INSTALAÇÃO
