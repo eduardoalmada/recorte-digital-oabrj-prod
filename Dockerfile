@@ -30,7 +30,7 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/usr/local/bin:$PATH"
 
-# 🔧 INSTALAÇÃO SIMPLIFICADA E CONFIÁVEL - MÉTODO ATUALIZADO
+# 🔧 INSTALAÇÃO CONFIÁVEL - VERSÃO ESPECÍFICA DO CHROME
 RUN set -eux; \
     apt-get update; \
     # ✅ INSTALA APENAS DEPENDÊNCIAS ESSENCIAIS
@@ -42,24 +42,22 @@ RUN set -eux; \
       libxdamage1 libxrandr2 libu2f-udev \
       libgbm1 libxshmfence1 libdrm2 libxkbcommon0; \
     \
-    # ✅ CHROME ESTÁVEL - MÉTODO ATUALIZADO (sem apt-key)
-    mkdir -p /etc/apt/keyrings; \
-    wget -q -O /etc/apt/keyrings/google-chrome.gpg https://dl.google.com/linux/linux_signing_key.pub; \
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends google-chrome-stable; \
+    # ✅ CHROME ESTÁVEL - VERSÃO ESPECÍFICA COMPROVADA
+    wget -q -O /tmp/chrome.deb \
+      "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_139.0.7258.138-1_amd64.deb"; \
+    apt-get install -y /tmp/chrome.deb; \
+    rm -f /tmp/chrome.deb; \
     \
-    # ✅ CHROMEDRIVER - USA A MESMA VERSÃO DO CHROME INSTALADO
-    CHROME_VERSION=$(google-chrome --version | awk '{print $3}'); \
-    echo "Chrome version: ${CHROME_VERSION}"; \
-    \
-    # Baixa chromedriver compatível
+    # ✅ CHROMEDRIVER - VERSÃO COMPATÍVEL FIXA
     wget -q -O /tmp/chromedriver.zip \
-      "https://chromedriver.storage.googleapis.com/$(curl -s https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_VERSION%.*})/chromedriver_linux64.zip"; \
+      "https://chromedriver.storage.googleapis.com/139.0.7258.138/chromedriver_linux64.zip"; \
     unzip -q /tmp/chromedriver.zip -d /usr/local/bin/; \
     chmod +x /usr/local/bin/chromedriver; \
     rm -f /tmp/chromedriver.zip; \
     \
+    # ✅ VERIFICA INSTALAÇÃO
+    echo "Chrome version:"; \
+    google-chrome --version; \
     echo "Chromedriver version:"; \
     chromedriver --version; \
     \
@@ -76,7 +74,7 @@ COPY --from=builder /install /usr/local
 # ✅ CRIA USUÁRIO NÃO-ROOT PARA SEGURANÇA
 RUN groupadd -r chromeuser && useradd -r -g chromeuser -G audio,video chromeuser && \
     mkdir -p /home/chromeuser/Downloads && \
-    chown -R chromeuser:chromeuser /home chromeuser && \
+    chown -R chromeuser:chromeuser /home/chromeuser && \
     chown -R chromeuser:chromeuser /app && \
     chmod 755 /usr/local/bin/chromedriver
 
