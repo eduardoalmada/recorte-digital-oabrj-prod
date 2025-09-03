@@ -45,4 +45,7 @@ services:
         sync: false
       - key: IMPORT_KEY
         sync: false
+
+    healthCheckPath: /healthcheck
+    healthCheckTimeout: 120
 EOF
