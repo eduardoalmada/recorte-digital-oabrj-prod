@@ -30,21 +30,22 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/usr/local/bin:$PATH"
 
-# 🔧 INSTALAÇÃO SIMPLIFICADA E CONFIÁVEL
+# 🔧 INSTALAÇÃO SIMPLIFICADA E CONFIÁVEL - MÉTODO ATUALIZADO
 RUN set -eux; \
     apt-get update; \
     # ✅ INSTALA APENAS DEPENDÊNCIAS ESSENCIAIS
     apt-get install -y --no-install-recommends \
-      wget curl unzip ca-certificates \
+      wget curl unzip ca-certificates gnupg \
       fonts-liberation libappindicator3-1 libasound2 \
       libatk-bridge2.0-0 libatk1.0-0 libcups2 libdbus-1-3 \
       libnspr4 libnss3 libx11-xcb1 libxcomposite1 \
       libxdamage1 libxrandr2 libu2f-udev \
       libgbm1 libxshmfence1 libdrm2 libxkbcommon0; \
     \
-    # ✅ CHROME ESTÁVEL - INSTALAÇÃO DIRETA DO REPOSITÓRIO
-    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -; \
-    echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list; \
+    # ✅ CHROME ESTÁVEL - MÉTODO ATUALIZADO (sem apt-key)
+    mkdir -p /etc/apt/keyrings; \
+    wget -q -O /etc/apt/keyrings/google-chrome.gpg https://dl.google.com/linux/linux_signing_key.pub; \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends google-chrome-stable; \
     \
@@ -75,7 +76,7 @@ COPY --from=builder /install /usr/local
 # ✅ CRIA USUÁRIO NÃO-ROOT PARA SEGURANÇA
 RUN groupadd -r chromeuser && useradd -r -g chromeuser -G audio,video chromeuser && \
     mkdir -p /home/chromeuser/Downloads && \
-    chown -R chromeuser:chromeuser /home/chromeuser && \
+    chown -R chromeuser:chromeuser /home chromeuser && \
     chown -R chromeuser:chromeuser /app && \
     chmod 755 /usr/local/bin/chromedriver
 
