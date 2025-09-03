@@ -9,28 +9,29 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# ✅ PRIMEIRO INSTALA WGET E DEPENDÊNCIAS
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget curl unzip ca-certificates gnupg \
-    build-essential gcc && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# ✅ AGORA INSTALA CHROME + CHROMEDRIVER
+# ✅ INSTALA TODAS AS DEPENDÊNCIAS + CHROME + CHROMEDRIVER EM UMA ÚNICA CAMADA
 RUN set -eux; \
-    # Chrome estável
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      wget curl unzip ca-certificates gnupg build-essential gcc \
+      fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+      libcups2 libdbus-1-3 libnspr4 libnss3 libx11-xcb1 \
+      libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
+      libxshmfence1 libdrm2 libxkbcommon0; \
+    \
+    # Baixa e instala Chrome estável
     wget -q -O /tmp/chrome.deb \
       "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"; \
     apt-get install -y /tmp/chrome.deb; \
     rm -f /tmp/chrome.deb; \
     \
-    # Chromedriver compatível
+    # Ajusta Chromedriver compatível
     CHROME_VERSION=$(google-chrome --version | awk '{print $3}'); \
     CHROME_MAJOR=$(echo $CHROME_VERSION | cut -d. -f1); \
     CHROME_MINOR=$(echo $CHROME_VERSION | cut -d. -f2); \
     CHROME_PATCH=$(echo $CHROME_VERSION | cut -d. -f3); \
     echo "Chrome version: ${CHROME_VERSION}"; \
     \
-    # Tenta múltiplas versões
     for VERSION in "${CHROME_VERSION}" "${CHROME_MAJOR}.${CHROME_MINOR}.${CHROME_PATCH}" "${CHROME_MAJOR}.${CHROME_MINOR}.0" "${CHROME_MAJOR}"; do \
       echo "Trying version: $VERSION"; \
       wget -q -O /tmp/chromedriver.zip \
@@ -51,14 +52,9 @@ RUN set -eux; \
     \
     echo "Chromedriver installed:"; \
     ls -lh /usr/local/bin/chromedriver; \
-    chromedriver --version;
-
-# ✅ DEPOIS INSTALA AS LIBS DE DEPENDÊNCIAS
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    fonts-liberation libasound2 libatk-bridge2.0-0 \
-    libatk1.0-0 libcups2 libdbus-1-3 libnspr4 libnss3 \
-    libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 \
-    libgbm1 libxshmfence1 libdrm2 libxkbcommon0 && \
+    chromedriver --version; \
+    \
+    # Limpeza
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Instala deps Python no prefixo /install
@@ -68,7 +64,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --prefix=/install gunicorn
 
 # ========================
-# STAGE 2 - RUNTIME OTIMIZADO  
+# STAGE 2 - RUNTIME OTIMIZADO
 # ========================
 FROM python:3.10-slim
 
@@ -77,23 +73,15 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/usr/local/bin:$PATH"
 
-# ✅ RUNTIME LEVE - APENAS DEPENDÊNCIAS DE RUNTIME
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libasound2 libatk-bridge2.0-0 libatk1.0-0 libcups2 \
-    libdbus-1-3 libnspr4 libnss3 libx11-xcb1 libxcomposite1 \
-    libxdamage1 libxrandr2 libgbm1 libxshmfence1 libdrm2 \
-    libxkbcommon0 && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-# ✅ COPIA TUDO DO BUILDER
+# ✅ Copia dependências essenciais já resolvidas do builder
 COPY --from=builder /install /usr/local
 COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
 COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
 COPY --from=builder /opt/google/chrome /opt/google/chrome
 
-# ✅ USUÁRIO NÃO-ROOT
+# ✅ Usuário não-root
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /home/appuser/Downloads && \
     chown -R appuser:appuser /home/appuser /app && \
