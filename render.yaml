@@ -1,49 +1,32 @@
 services:
   - type: web
     name: recorte-digital-oabrj-prod
-    env: docker
-    dockerfilePath: ./Dockerfile
+    dockerfile: ./Dockerfile
     startCommand: gunicorn main:app --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 2 --preload
-    healthCheckPath: /healthcheck  # ✅ APENAS PARA WEB
+    healthCheckPath: /healthcheck
     healthCheckTimeout: 120
     envVars:
       - key: REDIS_BROKER_URL
-        sync: false
       - key: SQLALCHEMY_DATABASE_URI
-        sync: false
       - key: WHATSAPP_API_URL
-        sync: false
       - key: IMPORT_KEY
-        sync: false
 
   - type: worker
-    name: Worker-recorte-digital-oabrj-prod
-    env: docker
-    dockerfilePath: ./Dockerfile
+    name: worker-recorte-digital-prod
+    dockerfile: ./Dockerfile
     startCommand: celery -A app.celery_worker.celery worker --loglevel=info --concurrency=1
-    # ✅ SEM HEALTHCHECK (WORKER)
     envVars:
       - key: REDIS_BROKER_URL
-        sync: false
       - key: SQLALCHEMY_DATABASE_URI
-        sync: false
       - key: WHATSAPP_API_URL
-        sync: false
       - key: IMPORT_KEY
-        sync: false
 
   - type: worker
-    name: recorte-digital-beat
-    env: docker
-    dockerfilePath: ./Dockerfile
+    name: beat-recorte-digital-prod
+    dockerfile: ./Dockerfile
     startCommand: celery -A app.celery_worker.celery beat --loglevel=info
-    # ✅ SEM HEALTHCHECK (BEAT)
     envVars:
       - key: REDIS_BROKER_URL
-        sync: false
       - key: SQLALCHEMY_DATABASE_URI
-        sync: false
       - key: WHATSAPP_API_URL
-        sync: false
       - key: IMPORT_KEY
-        sync: false
