@@ -23,6 +23,10 @@ RUN apt-get update && \
     apt-get install -y /tmp/chrome.deb && \
     rm -f /tmp/chrome.deb && \
     \
+    # ✅ CORREÇÃO: Cria symlink para compatibilidade
+    mkdir -p /opt/google/chrome && \
+    ln -sf /usr/bin/google-chrome /opt/google/chrome/chrome && \
+    \
     # Instala ChromeDriver compatível
     CHROME_VERSION=$(google-chrome --version | awk '{print $3}') && \
     echo "Detected Chrome version: ${CHROME_VERSION}" && \
@@ -54,8 +58,12 @@ COPY --from=builder /usr/bin/google-chrome /usr/bin/
 COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/
 COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/
 
-# ✅ Instala dependências de runtime manualmente (CONFIÁVEL)
-RUN apt-get update && \
+# ✅ CORREÇÃO: Cria symlink no runtime também
+RUN mkdir -p /opt/google/chrome && \
+    ln -sf /usr/bin/google-chrome /opt/google/chrome/chrome && \
+    \
+    # Instala dependências de runtime manualmente (CONFIÁVEL)
+    apt-get update && \
     apt-get install -y --no-install-recommends \
         libnss3 libatk1.0-0 libatk-bridge2.0-0 \
         libx11-xcb1 libxcomposite1 libxdamage1 \
