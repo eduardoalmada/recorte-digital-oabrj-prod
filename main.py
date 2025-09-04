@@ -1,9 +1,17 @@
+import os
+import sys
 from flask import Flask, jsonify
 from app import create_app
 from app.routes.webhook import webhook_bp
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+
+# ✅ CORREÇÃO DO PYTHONPATH - ADICIONE ESTAS LINHAS
+# Adiciona o diretório atual ao PYTHONPATH para resolver imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+print(f"📁 Diretório atual adicionado ao PYTHONPATH: {current_dir}")
 
 # ✅ FUNÇÃO PARA CRIAR DRIVER DO CHROME (adicionada aqui)
 def create_chrome_driver():
