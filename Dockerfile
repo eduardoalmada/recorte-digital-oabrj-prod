@@ -10,7 +10,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# ✅ Copia requirements PRIMEIRO (evita cache busting desnecessário)
 COPY requirements.txt .
 
 RUN set -eux; \
@@ -22,14 +21,12 @@ RUN set -eux; \
         libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
         libxshmfence1 libdrm2 libxkbcommon0 libappindicator3-1; \
     \
-    # Instala Chrome
     echo "Installing Chrome version: ${CHROME_VERSION}"; \
     wget -q -O /tmp/chrome.deb \
         "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}-1_amd64.deb"; \
     apt-get install -y /tmp/chrome.deb; \
     rm -f /tmp/chrome.deb; \
     \
-    # Instala ChromeDriver
     echo "Downloading ChromeDriver for version: ${CHROME_VERSION}"; \
     wget -q -O /tmp/chromedriver.zip \
         "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"; \
@@ -38,40 +35,40 @@ RUN set -eux; \
     chmod +x /usr/local/bin/chromedriver; \
     rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64; \
     \
-    # ✅ Instala dependências Python (AGORA COM requirements.txt DISPONÍVEL)
     pip install --no-cache-dir --upgrade pip; \
     pip install --no-cache-dir --prefix=/install -r requirements.txt; \
     pip install --no-cache-dir --prefix=/install gunicorn; \
     \
-    # Captura dependências
     mkdir -p /chrome-deps; \
     ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     \
-    # Limpeza
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*;
 
 # ========================
-# STAGE 2 - RUNTIME SUPER ENXUTO
+# STAGE 2 - RUNTIME
 # ========================
 FROM python:3.10-slim
 
-WORKDIR /app  # ✅ ADICIONADO: WORKDIR essencial
+WORKDIR /app
 
-# ✅ Cópia SEGURA e COMPLETA das dependências
+# Copia dependências Python
 COPY --from=builder /install /usr/local
+
+# Copia binários do Chrome
 COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
 COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
 COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/chrome-sandbox
-COPY --from=builder /chrome-deps/. /  # ✅ MELHOR: Copia TUDO de forma segura
 
-# ✅ Configuração completa e limpeza
+# Copia todas as dependências de forma segura
+COPY --from=builder /chrome-deps/. /
+
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /home/appuser/Downloads && \
     chown -R appuser:appuser /home/appuser /app && \
     chmod +x /usr/local/bin/chromedriver && \
-    apt-get update && apt-get clean && rm -rf /var/lib/apt/lists/*;  # ✅ LIMPEZA ADICIONADA
+    apt-get update && apt-get clean && rm -rf /var/lib/apt/lists/*;
 
 USER appuser
 
