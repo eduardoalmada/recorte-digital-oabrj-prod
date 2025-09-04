@@ -9,10 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# ✅ Copia antes para o cache
 COPY requirements.txt .
 
-# ✅ Instala tudo e faz a limpeza
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -22,7 +20,6 @@ RUN set -eux; \
       libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
       libxshmfence1 libdrm2 libxkbcommon0 libappindicator3-1; \
     \
-    # Fixa a versão do Chrome para previsibilidade
     CHROME_VERSION="140.0.7339.80"; \
     echo "Installing Chrome version: ${CHROME_VERSION}"; \
     wget -q -O /tmp/chrome.deb \
@@ -30,7 +27,6 @@ RUN set -eux; \
     apt-get install -y /tmp/chrome.deb; \
     rm -f /tmp/chrome.deb; \
     \
-    # Usa a versão COMPLETA para o ChromeDriver
     echo "Downloading ChromeDriver for version: ${CHROME_VERSION}"; \
     wget -q -O /tmp/chromedriver.zip \
       "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"; \
@@ -42,17 +38,14 @@ RUN set -eux; \
     chmod +x /usr/local/bin/chromedriver; \
     rm -f /tmp/chromedriver.zip; \
     \
-    # Captura automática de dependências com ldd
     mkdir -p /chrome-deps; \
     ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     \
-    # Instala dependências Python e gunicorn
     pip install --no-cache-dir --upgrade pip; \
     pip install --no-cache-dir --prefix=/install -r requirements.txt; \
     pip install --no-cache-dir --prefix=/install gunicorn; \
     \
-    # Limpeza agressiva
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*;
 
@@ -65,14 +58,14 @@ ENV PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
 
-# ✅ Copia apenas o essencial do builder
+# ✅ COPIA OS ARQUIVOS DE FORMA SEGURA
 COPY --from=builder /install /usr/local
 COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
 COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
-COPY --from=builder /chrome-deps/ /
 COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/chrome-sandbox
+COPY --from=builder /chrome-deps/lib/ /lib/
+COPY --from=builder /chrome-deps/usr/ /usr/
 
-# ✅ Configuração de usuário seguro e limpeza final
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /home/appuser/Downloads && \
     chown -R appuser:appuser /home/appuser /app && \
