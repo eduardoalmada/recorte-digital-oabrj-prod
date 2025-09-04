@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Instalação de todos os pacotes e Chrome em um único comando RUN
+# ✅ Instalação de todos os pacotes e Chrome em um único comando RUN
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -42,13 +42,14 @@ RUN set -eux; \
     ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     \
-    # Instalação Python eficiente
-    pip install --no-cache-dir --upgrade pip; \
-    pip install --no-cache-dir --prefix=/install -r requirements.txt; \
-    pip install --no-cache-dir --prefix=/install gunicorn; \
-    \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*;
+
+# ✅ Copia o arquivo de requisitos e instala o Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip; \
+    pip install --no-cache-dir --prefix=/install -r requirements.txt; \
+    pip install --no-cache-dir --prefix=/install gunicorn;
 
 # ========================
 # STAGE 2 - RUNTIME SUPER ENXUTO
@@ -59,7 +60,7 @@ ENV PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
 
-# Copia apenas o essencial
+# ✅ Copia apenas o essencial
 COPY --from=builder /install /usr/local
 COPY --from=builder /chrome-deps/ /
 COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
