@@ -5,80 +5,74 @@ FROM python:3.10-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive \
-    CHROME_VERSION="140.0.7339.80"
+    DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
+# ✅ Copia requirements primeiro para melhor cache
 COPY requirements.txt .
 
-RUN set -eux; \
-    apt-get update; \
+# ✅ Instala tudo em um único layer para otimização
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        wget curl unzip ca-certificates gnupg build-essential gcc \
-        fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
-        libcups2 libdbus-1-3 libnspr4 libnss3 libx11-xcb1 \
-        libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
-        libxshmfence1 libdrm2 libxkbcommon0 libappindicator3-1; \
+        wget curl unzip ca-certificates gnupg && \
     \
-    echo "Installing Chrome version: ${CHROME_VERSION}"; \
+    # Instala Chrome estável (versão mais compatível)
     wget -q -O /tmp/chrome.deb \
-        "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}-1_amd64.deb"; \
-    apt-get install -y /tmp/chrome.deb; \
-    rm -f /tmp/chrome.deb; \
+        https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+    apt-get install -y /tmp/chrome.deb && \
+    rm -f /tmp/chrome.deb && \
     \
-    echo "Downloading ChromeDriver for version: ${CHROME_VERSION}"; \
+    # Instala ChromeDriver compatível
+    CHROME_VERSION=$(google-chrome --version | awk '{print $3}') && \
+    echo "Detected Chrome version: ${CHROME_VERSION}" && \
     wget -q -O /tmp/chromedriver.zip \
-        "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"; \
-    unzip -q /tmp/chromedriver.zip -d /tmp/; \
-    mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/; \
-    chmod +x /usr/local/bin/chromedriver; \
-    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64; \
+        "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" && \
+    unzip /tmp/chromedriver.zip -d /tmp/ && \
+    mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/ && \
+    chmod +x /usr/local/bin/chromedriver && \
+    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64 && \
     \
-    pip install --no-cache-dir --upgrade pip; \
-    pip install --no-cache-dir --prefix=/install -r requirements.txt; \
-    pip install --no-cache-dir --prefix=/install gunicorn; \
+    # Instala dependências Python
+    pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --prefix=/install -r requirements.txt && \
     \
-    mkdir -p /chrome-deps; \
-    ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
-    ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
-    \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*;
+    # Limpeza
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ========================
-# STAGE 2 - RUNTIME
+# STAGE 2 - RUNTIME (SIMPLIFICADO E CONFIÁVEL)
 # ========================
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# Copia dependências Python
+# ✅ Copia apenas o essencial
 COPY --from=builder /install /usr/local
+COPY --from=builder /usr/bin/google-chrome /usr/bin/
+COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/
+COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/
 
-# Copia binários do Chrome
-COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
-COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
-COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/chrome-sandbox
+# ✅ Instala dependências de runtime manualmente (CONFIÁVEL)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+        libx11-xcb1 libxcomposite1 libxdamage1 \
+        libxfixes3 libxrandr2 libgbm1 libasound2 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# ✅ CORREÇÃO: Copia diretórios específicos com tolerância a falhas
-COPY --from=builder /chrome-deps/lib/ /lib/ || true
-COPY --from=builder /chrome-deps/usr/ /usr/ || true
-COPY --from=builder /chrome-deps/lib64/ /lib64/ || true
-
+# ✅ Configuração de usuário seguro
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /home/appuser/Downloads && \
     chown -R appuser:appuser /home/appuser /app && \
-    chmod +x /usr/local/bin/chromedriver && \
-    apt-get update && apt-get clean && rm -rf /var/lib/apt/lists/*;
+    chmod +x /usr/local/bin/chromedriver
 
 USER appuser
 
 COPY --chown=appuser:appuser . .
 
 EXPOSE 10000
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-10000}/healthcheck || exit 1
 
 CMD ["sh", "-c", "gunicorn main:app --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 2 --preload"]
