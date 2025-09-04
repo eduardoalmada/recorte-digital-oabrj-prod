@@ -61,8 +61,10 @@ COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
 COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
 COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/chrome-sandbox
 
-# Copia todas as dependências de forma segura
-COPY --from=builder /chrome-deps/. /
+# ✅ CORREÇÃO: Copia diretórios específicos com tolerância a falhas
+COPY --from=builder /chrome-deps/lib/ /lib/ || true
+COPY --from=builder /chrome-deps/usr/ /usr/ || true
+COPY --from=builder /chrome-deps/lib64/ /lib64/ || true
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /home/appuser/Downloads && \
