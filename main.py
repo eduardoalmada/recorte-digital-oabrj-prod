@@ -7,7 +7,7 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
-# ✅ CORREÇÃO DO PYTHONPATH - ADICIONE ESTAS LINHAS
+# ✅ NOVA CORREÇÃO DO PYTHONPATH - ADICIONE ESTAS LINHAS
 # Adiciona o diretório atual ao PYTHONPATH para resolver imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
