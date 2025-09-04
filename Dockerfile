@@ -28,9 +28,10 @@ RUN set -eux; \
     apt-get install -y /tmp/chrome.deb; \
     rm -f /tmp/chrome.deb; \
     \
-    # ✅ Chromedriver compatível
+    # ✅ CORREÇÃO: Usa a versão COMPLETA para ChromeDriver
+    echo "Downloading ChromeDriver for version: ${CHROME_VERSION}"; \
     wget -q -O /tmp/chromedriver.zip \
-      "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION%.*}/linux64/chromedriver-linux64.zip"; \
+      "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"; \
     unzip -q /tmp/chromedriver.zip -d /usr/local/bin/; \
     if [ -d "/usr/local/bin/chromedriver-linux64" ]; then \
       mv /usr/local/bin/chromedriver-linux64/chromedriver /usr/local/bin/; \
@@ -56,6 +57,8 @@ RUN set -eux; \
 # STAGE 2 - RUNTIME SUPER ENXUTO
 # ========================
 FROM python:3.10-slim
+
+ENV PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
 
