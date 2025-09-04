@@ -3,85 +3,70 @@
 # ========================
 FROM python:3.10-slim AS builder
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    CHROME_VERSION=140.0.7339.80 \
+    CHROMEDRIVER_VERSION=140.0.7339.80
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Instala dependências e o Google Chrome
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget unzip ca-certificates fontconfig locales \
+    libglib2.0-0 libnss3 libx11-6 libx11-xcb1 libxcomposite1 \
+    libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 \
+    libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libpango-1.0-0 libcairo2 libasound2 \
+    && wget -O /tmp/chrome.deb \
+    "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}-1_amd64.deb" \
+    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+    && rm -f /tmp/chrome.deb \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-      wget curl unzip ca-certificates gnupg build-essential gcc libc-bin \
-      fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
-      libcups2 libdbus-1-3 libnspr4 libnss3 libx11-xcb1 \
-      libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
-      libxshmfence1 libdrm2 libxkbcommon0 libappindicator3-1; \
-    \
-    CHROME_VERSION="140.0.7339.80"; \
-    echo "Installing Chrome version: ${CHROME_VERSION}"; \
-    wget -q -O /tmp/chrome.deb \
-      "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}-1_amd64.deb"; \
-    apt-get install -y /tmp/chrome.deb; \
-    rm -f /tmp/chrome.deb; \
-    \
-    echo "Downloading ChromeDriver for version: ${CHROME_VERSION}"; \
-    wget -q -O /tmp/chromedriver.zip \
-      "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"; \
-    unzip -q /tmp/chromedriver.zip -d /usr/local/bin/; \
-    if [ -d "/usr/local/bin/chromedriver-linux64" ]; then \
-      mv /usr/local/bin/chromedriver-linux64/chromedriver /usr/local/bin/; \
-      rm -rf /usr/local/bin/chromedriver-linux64; \
-    fi; \
-    chmod +x /usr/local/bin/chromedriver; \
-    rm -f /tmp/chromedriver.zip; \
-    \
-    # Captura automática de dependências
-    mkdir -p /chrome-deps; \
-    ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | \
-      xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
-    ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | \
-      xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
-    \
-    pip install --no-cache-dir --upgrade pip; \
-    pip install --no-cache-dir --prefix=/install -r requirements.txt; \
-    pip install --no-cache-dir --prefix=/install gunicorn; \
-    \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*;
+# Instala ChromeDriver fixado e move para o PATH
+RUN wget -O /tmp/chromedriver.zip \
+    "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
+    && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
+    && chmod +x /usr/local/bin/chromedriver \
+    && rm -f /tmp/chromedriver*
+
+# Extrai dependências do Chrome
+RUN mkdir -p /chrome-deps && \
+    ldd /usr/bin/google-chrome | tr -s '[:blank:]' '\n' | grep '^/' | \
+    xargs -I {} cp --parents -v {} /chrome-deps/ || true
+
+# Instala dependências Python
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
 
 # ========================
-# STAGE 2 - RUNTIME SUPER ENXUTO
+# STAGE 2 - FINAL IMAGE
 # ========================
 FROM python:3.10-slim
 
-ENV PATH="/usr/local/bin:$PATH"
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/root/.local/bin:$PATH
 
 WORKDIR /app
 
-# ✅ Copia tudo necessário do builder
-COPY --from=builder /install /usr/local
-COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
-COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
-COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/chrome-sandbox
+# Copia dependências do Chrome do builder
 COPY --from=builder /chrome-deps/ /
 
-# ✅ Configuração de usuário seguro e limpeza final
-RUN groupadd -r appuser && useradd -r -g appuser appuser && \
-    mkdir -p /home/appuser/Downloads && \
-    chown -R appuser:appuser /home/appuser /app && \
-    chmod +x /usr/local/bin/chromedriver && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*;
+# Copia binários do Chrome e ChromeDriver
+COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
+COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
 
-USER appuser
+# Copia dependências Python já instaladas
+COPY --from=builder /root/.local /root/.local
 
-COPY --chown=appuser:appuser . .
+# Copia código da aplicação
+COPY . .
 
-EXPOSE 10000
+# Porta padrão do Flask/Gunicorn
+EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-10000}/healthcheck || exit 1
-
-CMD ["sh", "-c", "gunicorn main:app --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 2 --preload"]
+# Comando de inicialização
+CMD ["gunicorn", "main:app", "--bind", "0.0.0.0:8000", "--workers", "2"]
