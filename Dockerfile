@@ -9,18 +9,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
+# ✅ Copia antes para o cache
 COPY requirements.txt .
 
+# ✅ Instala tudo e faz a limpeza
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      wget curl unzip ca-certificates gnupg build-essential gcc \
+      wget curl unzip ca-certificates gnupg build-essential gcc libc-bin \
       fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
       libcups2 libdbus-1-3 libnspr4 libnss3 libx11-xcb1 \
       libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
       libxshmfence1 libdrm2 libxkbcommon0 libappindicator3-1; \
     \
-    # ✅ Versão fixa para previsibilidade
+    # Fixa a versão do Chrome para previsibilidade
     CHROME_VERSION="140.0.7339.80"; \
     echo "Installing Chrome version: ${CHROME_VERSION}"; \
     wget -q -O /tmp/chrome.deb \
@@ -28,7 +30,7 @@ RUN set -eux; \
     apt-get install -y /tmp/chrome.deb; \
     rm -f /tmp/chrome.deb; \
     \
-    # ✅ CORREÇÃO: Usa a versão COMPLETA para ChromeDriver
+    # Usa a versão COMPLETA para o ChromeDriver
     echo "Downloading ChromeDriver for version: ${CHROME_VERSION}"; \
     wget -q -O /tmp/chromedriver.zip \
       "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"; \
@@ -40,16 +42,17 @@ RUN set -eux; \
     chmod +x /usr/local/bin/chromedriver; \
     rm -f /tmp/chromedriver.zip; \
     \
-    # ✅ Captura automática de dependências
+    # Captura automática de dependências com ldd
     mkdir -p /chrome-deps; \
     ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     \
-    # ✅ Instalação Python eficiente
+    # Instala dependências Python e gunicorn
     pip install --no-cache-dir --upgrade pip; \
     pip install --no-cache-dir --prefix=/install -r requirements.txt; \
+    pip install --no-cache-dir --prefix=/install gunicorn; \
     \
-    # ✅ Limpeza agressiva
+    # Limpeza agressiva
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*;
 
@@ -62,19 +65,18 @@ ENV PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
 
-# ✅ Copia apenas o essencial
+# ✅ Copia apenas o essencial do builder
 COPY --from=builder /install /usr/local
 COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
 COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
 COPY --from=builder /chrome-deps/ /
 COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/chrome-sandbox
 
-# ✅ Configuração de usuário seguro
+# ✅ Configuração de usuário seguro e limpeza final
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /home/appuser/Downloads && \
     chown -R appuser:appuser /home/appuser /app && \
     chmod +x /usr/local/bin/chromedriver && \
-    # ✅ Limpeza final
     apt-get clean && rm -rf /var/lib/apt/lists/*;
 
 USER appuser
