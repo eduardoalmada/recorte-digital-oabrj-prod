@@ -1,5 +1,5 @@
 # ========================
-# STAGE 1 - BUILDER 
+# STAGE 1 - BUILDER
 # ========================
 FROM python:3.10-slim AS builder
 
@@ -38,9 +38,12 @@ RUN set -eux; \
     chmod +x /usr/local/bin/chromedriver; \
     rm -f /tmp/chromedriver.zip; \
     \
+    # Captura automática de dependências
     mkdir -p /chrome-deps; \
-    ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
-    ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
+    ldd /usr/bin/google-chrome | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | \
+      xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
+    ldd /usr/local/bin/chromedriver | awk '/=>/ {print $3}' | grep -E '^/' | sort -u | \
+      xargs -I{} cp -v --parents {} /chrome-deps 2>/dev/null || true; \
     \
     pip install --no-cache-dir --upgrade pip; \
     pip install --no-cache-dir --prefix=/install -r requirements.txt; \
@@ -58,14 +61,14 @@ ENV PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
 
-# ✅ COPIA OS ARQUIVOS DE FORMA SEGURA
+# ✅ Copia tudo necessário do builder
 COPY --from=builder /install /usr/local
 COPY --from=builder /usr/local/bin/chromedriver /usr/local/bin/chromedriver
 COPY --from=builder /usr/bin/google-chrome /usr/bin/google-chrome
 COPY --from=builder /opt/google/chrome/chrome-sandbox /opt/google/chrome/chrome-sandbox
-COPY --from=builder /chrome-deps/lib/ /lib/
-COPY --from=builder /chrome-deps/usr/ /usr/
+COPY --from=builder /chrome-deps/ /
 
+# ✅ Configuração de usuário seguro e limpeza final
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /home/appuser/Downloads && \
     chown -R appuser:appuser /home/appuser /app && \
