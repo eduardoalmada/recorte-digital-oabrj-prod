@@ -22,10 +22,12 @@ gunicorn==23.0.0
 # ─── Tarefas Assíncronas ───────────────────────────────────────
 celery==5.3.6
 redis==5.0.4
+kombu==5.4.2          # ✅ ADICIONADO - Broker Celery
+vine==5.1.0           # ✅ ADICIONADO - Requerido pelo Celery
+billiard==4.2.0       # ✅ ADICIONADO - Para compatibilidade
 
 # ─── Scraping / Navegação Web ─────────────────────────────────
 selenium==4.34.2
-undetected-chromedriver==3.5.5
 beautifulsoup4==4.13.4
 soupsieve==2.7
 
@@ -35,16 +37,7 @@ urllib3==2.5.0
 idna==3.10
 charset-normalizer==3.4.2
 certifi==2025.7.14
-PySocks==1.7.1
 websocket-client==1.8.0
-wsproto==1.2.0
-
-# ─── Async / WebSocket ─────────────────────────────────────────
-trio==0.30.0
-trio-websocket==0.12.2
-sniffio==1.3.1
-outcome==1.3.0.post0
-sortedcontainers==2.4.0
 
 # ─── Utilitários e Outros ─────────────────────────────────────
 attrs==25.3.0
@@ -54,9 +47,19 @@ cffi==1.17.1
 pycparser==2.22
 colorama==0.4.6
 typing_extensions==4.14.1
-PyPDF2==3.0.1  # ✅ VERSÃO FIXADA
-pdfminer.six==20250506  # ✅ VERSÃO FIXADA
+PyPDF2==3.0.1
+pdfminer.six==20250506
 
-# ─── Dependências de Build (para segurança) ───────────────────
-setuptools==69.5.1  # ✅ EVITA PROBLEMAS DE BUILD
-wheel==0.43.0  # ✅ MELHORA PERFORMANCE DE INSTALAÇÃO
+# ─── Dependências de Build ────────────────────────────────────
+setuptools==69.5.1
+wheel==0.43.0
+
+# ❌ REMOVIDOS (conflitantes/desnecessários):
+# undetected-chromedriver==3.5.5  # Conflita com Selenium
+# PySocks==1.7.1
+# wsproto==1.2.0
+# trio==0.30.0
+# trio-websocket==0.12.2
+# sniffio==1.3.1
+# outcome==1.3.0.post0
+# sortedcontainers==2.4.0
