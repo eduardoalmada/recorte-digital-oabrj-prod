@@ -1,23 +1,21 @@
 import os
 import sys
 from flask import Flask, jsonify
-from app import create_app
-from app.routes.webhook import webhook_bp
 from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 
-# ✅ NOVA CORREÇÃO DO PYTHONPATH - ADICIONE ESTAS LINHAS
-# Adiciona o diretório atual ao PYTHONPATH para resolver imports
+# ✅ 1. PYTHONPATH primeiro
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 print(f"📁 Diretório atual adicionado ao PYTHONPATH: {current_dir}")
 
-# ✅ FUNÇÃO PARA CRIAR DRIVER DO CHROME (adicionada aqui)
+# ✅ 2. DEFINA a função create_chrome_driver ANTES de importar webhook_bp
 def create_chrome_driver():
     """
     Cria e retorna uma instância do Chrome WebDriver configurada
     """
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    
     options = Options()
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
@@ -30,16 +28,18 @@ def create_chrome_driver():
     driver = webdriver.Chrome(options=options)
     return driver
 
-# 1. Crie o app PRIMEIRO
+# ✅ 3. AGORA importe os módulos que podem usar a função
+from app import create_app
+from app.routes.webhook import webhook_bp
+
+# 4. Crie o app
 app = create_app()
 
-# 2. Depois adicione as rotas
+# 5. Defina as rotas
 @app.route('/healthcheck')
 def healthcheck():
-    # Use jsonify para garantir o formato e Content-Type corretos
     return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
 
-# ✅ EXEMPLO: Rota de teste do scraper (adicione se necessário)
 @app.route('/test-scraper')
 def test_scraper():
     """
@@ -61,7 +61,7 @@ def test_scraper():
             'message': f'Erro no scraper: {str(e)}'
         }), 500
 
-# 3. Depois registre blueprints
+# 6. Registre blueprints
 app.register_blueprint(webhook_bp, url_prefix="/webhook")
 
 if __name__ == "__main__":
