@@ -1,7 +1,7 @@
 services:
   - type: web
     name: recorte-digital-oabrj-prod
-    dockerfile: ./Dockerfile
+    dockerfile: ./Dockerfile.web  # ✅ Específico para web
     startCommand: gunicorn main:app --bind 0.0.0.0:${PORT:-10000} --timeout 120 --workers 2 --preload
     healthCheckPath: /healthcheck
     healthCheckTimeout: 120
@@ -13,7 +13,7 @@ services:
 
   - type: worker
     name: worker-recorte-digital-prod
-    dockerfile: ./Dockerfile
+    dockerfile: ./Dockerfile.worker  # ✅ Específico para worker
     startCommand: celery -A app.celery_worker.celery worker --loglevel=info --concurrency=1
     envVars:
       - key: REDIS_BROKER_URL
@@ -23,7 +23,7 @@ services:
 
   - type: worker
     name: beat-recorte-digital-prod
-    dockerfile: ./Dockerfile
+    dockerfile: ./Dockerfile.worker  # ✅ Específico para beat
     startCommand: celery -A app.celery_worker.celery beat --loglevel=info
     envVars:
       - key: REDIS_BROKER_URL
