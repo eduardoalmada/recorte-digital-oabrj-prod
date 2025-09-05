@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# ✅ Instala Chrome minimalista e seguro
+# ✅ Instala Chrome minimalista e seguro (VERSÃO CORRIGIDA - sem symlink)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates wget unzip binutils xz-utils && \
@@ -10,11 +10,9 @@ RUN apt-get update && \
     wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
     ar x google-chrome-stable_current_amd64.deb && \
     tar -xf data.tar.* && \
-    mv ./opt/google/chrome /opt/ && \
     mv ./usr/bin/google-chrome-stable /usr/bin/google-chrome && \
-    ln -sf /usr/bin/google-chrome /opt/google/chrome/chrome && \
     rm -rf /tmp/chrome && \
-    google-chrome --version && \
+    /usr/bin/google-chrome --version && \
     apt-get purge -y binutils xz-utils && \
     apt-get autoremove -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -27,7 +25,7 @@ RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}') && \
     chmod +x /usr/local/bin/chromedriver && \
     rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64
 
-# ✅ DEPENDÊNCIAS RUNTIME COMPLETAS (inclui todas as libs críticas)
+# ✅ DEPENDÊNCIAS RUNTIME COMPLETAS
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libnss3 \
         libatk1.0-0 \
@@ -39,7 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxrandr2 \
         libgbm1 \
         libasound2 \
-        # ✅ NOVAS LIBS CRÍTICAS PARA CHROME HEADLESS:
         libxkbcommon0 \
         libwayland-client0 \
         libwayland-server0 \
@@ -50,7 +47,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-liberation \
         libappindicator3-1 \
         xdg-utils \
-        # ✅ LIBS ADICIONAIS PARA ESTABILIDADE:
         libdrm2 \
         libexpat1 \
         libglib2.0-0 \
