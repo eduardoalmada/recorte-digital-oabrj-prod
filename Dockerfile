@@ -5,7 +5,7 @@ WORKDIR /app
 # ✅ Instala Chrome minimalista e seguro
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates wget unzip binutils && \
+        ca-certificates wget unzip binutils xz-utils && \
     mkdir -p /tmp/chrome && cd /tmp/chrome && \
     wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
     ar x google-chrome-stable_current_amd64.deb && \
@@ -15,7 +15,7 @@ RUN apt-get update && \
     ln -sf /usr/bin/google-chrome /opt/google/chrome/chrome && \
     rm -rf /tmp/chrome && \
     google-chrome --version && \
-    apt-get purge -y binutils && \
+    apt-get purge -y binutils xz-utils && \
     apt-get autoremove -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -25,6 +25,7 @@ RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}') && \
     unzip /tmp/chromedriver.zip -d /tmp/ && \
     mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/ && \
     chmod +x /usr/local/bin/chromedriver && \
+    # ✅ CORREÇÃO: caminho de remoção ajustado para "-linux64"
     rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64
 
 # ✅ Dependências runtime mínimas
