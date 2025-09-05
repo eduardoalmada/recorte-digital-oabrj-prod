@@ -16,16 +16,16 @@ print(f"📁 Diretório atual adicionado ao PYTHONPATH: {current_dir}")
 # ✅ FUNÇÃO PARA CRIAR DRIVER DO CHROME (adicionada aqui)
 def create_chrome_driver():
     """
-    Cria e retorna uma instância do Chrome WebDriver configurada para o ambiente Render
+    Cria e retorna uma instância do Chrome WebDriver configurada
     """
     options = Options()
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
-    options.add_argument('--user-data-dir=/tmp/chrome-profile')
+    options.add_argument(f'--user-data-dir=/tmp/chrome-profile-{os.getpid()}')  # ✅ ÚNICO POR PROCESSO
     options.add_argument('--remote-debugging-port=0')
-    options.binary_location = '/usr/bin/google-chrome'  # Caminho correto no Render
+    options.binary_location = '/usr/bin/google-chrome'
     
     driver = webdriver.Chrome(options=options)
     return driver
