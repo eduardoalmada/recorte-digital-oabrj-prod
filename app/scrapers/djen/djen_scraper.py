@@ -46,5 +46,8 @@ class DJENScraper:
             error_msg = f"Erro no DJENScraper: {str(e)}"
             resultados['erros'].append(error_msg)
             logger.error(error_msg)
+        finally:
+            # ✅ GARANTE FECHAMENTO DO CLIENT
+            self.client.close()
         
         return resultados
