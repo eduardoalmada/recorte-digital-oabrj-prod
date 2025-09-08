@@ -13,6 +13,9 @@ celery = Celery(
     include=['app.tasks']
 )
 
+# ✅ Adicione esta linha para forçar a conexão com o Redis
+celery_app.connection()
+
 # ✅ Configurações de produção
 celery.conf.update(
     task_serializer='json',
