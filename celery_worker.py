@@ -8,8 +8,8 @@ load_dotenv()
 # ✅ Configuração robusta para produção
 celery = Celery(
     "recorte_digital",
-    broker=os.getenv("REDIS_BROKER_URL", "redis://localhost:6379/0"),
-    backend=os.getenv("REDIS_BROKER_URL", "redis://localhost:6379/0"),
+    broker=os.getenv("REDIS_BROKER_URL",
+    backend=os.getenv("REDIS_BROKER_URL",
     include=['app.tasks']  # ✅ Importa tasks explicitamente
 )
 
