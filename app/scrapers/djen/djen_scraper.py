@@ -1,9 +1,12 @@
 # app/scrapers/djen/djen_scraper.py
 import logging
-from datetime import date
+import requests
+import time
+from datetime import date, datetime
 from typing import Dict, List
 from app import db
-from app.models import Advogado
+from app.models import Advogado, AdvogadoPublicacao, DiarioOficial
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -19,51 +22,161 @@ class DJENScraper:
             'data': data_ref.isoformat(),
             'total_publicacoes': 0,
             'total_mencoes': 0,
-            'tribunais_processados': ['DJEN'],  # ✅ Adicionado DJEN como tribunal processado
+            'whatsapps_enviados': 0,
+            'mencoes_detectadas': [],
+            'tribunais_processados': ['DJEN'],
             'erros': []
         }
         
         try:
             logger.info("🚀 Iniciando scraping DJEN com Selenium")
             
-            # ✅ IMPLEMENTE ESTE MÉTODO NO DJENClient
+            # 1. BUSCAR PUBLICAÇÕES
             publicacoes = self.client.buscar_publicacoes_por_data(data_ref)
             resultados['total_publicacoes'] = len(publicacoes)
             
             logger.info(f"✅ DJEN - {len(publicacoes)} publicações encontradas")
             
-            # Se encontrou publicações, processa menções
-            if publicacoes and Advogado.query.first():  # Só processa se houver advogados
-                from app.scrapers.scraper_completo_djerj import normalizar_texto
-                from app.utils.advogado_utils import buscar_mencoes_advogado
+            if publicacoes:
+                # 2. CRIAR REGISTRO NO DIÁRIO OFICIAL
+                diario = DiarioOficial(
+                    data_publicacao=data_ref,
+                    fonte='DJEN',
+                    total_publicacoes=len(publicacoes),
+                    caderno='DJEN'
+                )
+                db.session.add(diario)
+                db.session.flush()
                 
-                advogados = Advogado.query.filter_by(ativo=True).all()
-                logger.info(f"🔍 Processando {len(advogados)} advogados")
+                # 3. VERIFICAR ADVOGADOS MENCIONADOS
+                advogados = Advogado.query.filter(Advogado.whatsapp.isnot(None)).all()
+                logger.info(f"🔍 Processando {len(advogados)} advogados com WhatsApp")
                 
-                # ✅ LÓGICA DE MATCHING SIMPLIFICADA
-                total_mencoes = 0
                 for publicacao in publicacoes:
-                    texto_publicacao = publicacao.get('texto', '')
+                    texto_publicacao = publicacao.get('texto', '').upper()
+                    
                     for advogado in advogados:
-                        if advogado.nome and advogado.nome.upper() in texto_publicacao.upper():
-                            total_mencoes += 1
-                            # ✅ AQUI VOCÊ PODE SALVAR A MENCÃO NO BANCO
-                            # from app.models import Mention
-                            # mention = Mention(advogado_id=advogado.id, ...)
-                            # db.session.add(mention)
+                        if (advogado.nome_completo and 
+                            advogado.nome_completo.upper() in texto_publicacao and 
+                            len(advogado.nome_completo) > 5):
+                            
+                            # 4. SALVAR MENCÃO NO BANCO
+                            advogado_pub = AdvogadoPublicacao(
+                                advogado_id=advogado.id,
+                                diario_id=diario.id,
+                                data_publicacao=data_ref,
+                                qtd_mencoes=1,
+                                contexto=texto_publicacao[:500],
+                                titulo=publicacao.get('titulo', 'Menção DJEN'),
+                                tribunal='DJEN',
+                                caderno=publicacao.get('caderno', 'DJEN'),
+                                link=publicacao.get('url', '')
+                            )
+                            db.session.add(advogado_pub)
+                            resultados['total_mencoes'] += 1
+                            
+                            resultados['mencoes_detectadas'].append({
+                                'advogado': advogado.nome_completo,
+                                'whatsapp': advogado.whatsapp,
+                                'publicacao': texto_publicacao[:100] + '...',
+                                'oab': advogado.numero_oab
+                            })
                 
-                resultados['total_mencoes'] = total_mencoes
-                logger.info(f"✅ DJEN - {total_mencoes} menções encontradas")
+                # 5. SALVAR TUDO NO BANCO
+                db.session.commit()
                 
-            # ✅ SALVAR ALTERAÇÕES NO BANCO
-            db.session.commit()
+                # 6. ENVIAR WHATSAPP VIA UZAPI (se houver menções)
+                if resultados['total_mencoes'] > 0:
+                    whatsapps_enviados = self._enviar_notificacoes_uzapi(resultados['mencoes_detectadas'])
+                    resultados['whatsapps_enviados'] = whatsapps_enviados
+                else:
+                    logger.info("📭 Nenhuma menção encontrada - WhatsApp não enviado")
                 
         except Exception as e:
+            db.session.rollback()
             error_msg = f"Erro no DJENScraper: {str(e)}"
             resultados['erros'].append(error_msg)
-            logger.error(error_msg, exc_info=True)  # ✅ Adicionado traceback completo
+            logger.error(error_msg, exc_info=True)
         finally:
-            # ✅ GARANTE FECHAMENTO DO CLIENT
             self.client.close()
         
+        # ✅ LOG FINAL COMPLETO (SUA RECOMENDAÇÃO)
+        logger.info(
+            f"🎯 RESULTADO FINAL - "
+            f"Publicações: {resultados['total_publicacoes']}, "
+            f"Menções: {resultados['total_mencoes']}, "
+            f"WhatsApps: {resultados['whatsapps_enviados']}, "
+            f"Erros: {len(resultados['erros'])}"
+        )
+        
         return resultados
+    
+    def _enviar_notificacoes_uzapi(self, mencoes: List[Dict]) -> int:
+        """Envia notificações via UZAPI WhatsApp com timeout e retry"""
+        enviados = 0
+        uzapi_url = os.getenv('UZAPI_URL')
+        uzapi_token = os.getenv('UZAPI_TOKEN')
+        
+        if not all([uzapi_url, uzapi_token]):
+            logger.warning("⚠️ Configuração UZAPI não encontrada - simulação")
+            for mencao in mencoes:
+                logger.info(f"📱 WhatsApp simulado para {mencao['advogado']}: {mencao['whatsapp']}")
+            return len(mencoes)
+        
+        headers = {
+            'Authorization': f'Bearer {uzapi_token}',
+            'Content-Type': 'application/json'
+        }
+        
+        for mencao in mencoes:
+            try:
+                mensagem = (
+                    f"*Menção no DJEN encontrada!* 📢\n\n"
+                    f"*Advogado:* {mencao['advogado']}\n"
+                    f"*OAB:* {mencao['oab'] or 'N/A'}\n"
+                    f"*Trecho:* {mencao['publicacao']}\n\n"
+                    f"📅 Data: {datetime.now().strftime('%d/%m/%Y')}\n"
+                    f"🔍 Fonte: Diário de Justiça Eletrônico Nacional"
+                )
+                
+                payload = {
+                    "number": mencao['whatsapp'],
+                    "message": mensagem,
+                    "isGroup": False
+                }
+                
+                # ✅ TIMEOUT DE 30 SEGUNDOS (SUA RECOMENDAÇÃO)
+                response = requests.post(
+                    f"{uzapi_url}/send-text",
+                    json=payload,
+                    headers=headers,
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"✅ WhatsApp enviado para {mencao['advogado']}")
+                    enviados += 1
+                else:
+                    # ✅ RETRY PARA FALHAS HTTP
+                    logger.warning(f"⚠️ Retry UZAPI para {mencao['advogado']}: {response.status_code}")
+                    time.sleep(2)
+                    response_retry = requests.post(
+                        f"{uzapi_url}/send-text",
+                        json=payload,
+                        headers=headers,
+                        timeout=30
+                    )
+                    if response_retry.status_code == 200:
+                        logger.info(f"✅ WhatsApp enviado no retry para {mencao['advogado']}")
+                        enviados += 1
+                    else:
+                        logger.error(f"❌ Falha UZAPI após retry: {response_retry.status_code}")
+                        
+            except requests.Timeout:
+                logger.warning(f"⏰ Timeout UZAPI para {mencao['advogado']}")
+            except requests.ConnectionError:
+                logger.warning(f"🔌 ConnectionError UZAPI para {mencao['advogado']}")
+            except Exception as e:
+                logger.error(f"❌ Erro UZAPI para {mencao['advogado']}: {e}")
+        
+        return enviados
