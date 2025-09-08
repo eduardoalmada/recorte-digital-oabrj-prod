@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# ✅ Instala apenas Chrome + dependências ESSENCIAIS (SEM Redis)
+# ✅ Instala Chrome + dependências (para todos os serviços)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates wget unzip gnupg \
@@ -12,7 +12,7 @@ RUN apt-get update && \
         libxkbcommon0 libwayland-client0 libwayland-server0 \
         libminizip1 libevent-2.1-7 libharfbuzz0b \
         libsecret-1-0 fonts-liberation \
-        libappindicator3-1 xdg-utils && \  # ❌ SEM redis-server
+        libappindicator3-1 xdg-utils && \
     \
     wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
     apt-get install -y --no-install-recommends /tmp/chrome.deb && \
@@ -27,10 +27,12 @@ RUN apt-get update && \
     \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# ✅ Instalação Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# ✅ Usuário seguro
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     chown -R appuser:appuser /app
 USER appuser
@@ -38,3 +40,4 @@ USER appuser
 COPY --chown=appuser:appuser . .
 
 EXPOSE 10000
+# ✅ SEM CMD fixo - definido no render.yaml
