@@ -1,3 +1,18 @@
+from celery import current_app as celery
+from app import create_app
+import logging
+from functools import lru_cache  # ✅ Import necessário para o cache
+
+logger = logging.getLogger(__name__)
+
+# ✅ ADICIONE ESTA FUNÇÃO (ela estava faltando)
+@lru_cache(maxsize=1)
+def get_flask_app():
+    """Retorna instância única da app Flask com contexto"""
+    app = create_app()
+    app.app_context().push()  # ✅ Cria e ativa o contexto
+    return app
+
 @celery.task(
     name='app.tasks.tarefa_buscar_publicacoes',
     bind=True,
@@ -8,29 +23,22 @@
 )
 def tarefa_buscar_publicacoes(self):
     """Task principal para buscar publicações com retry automático"""
-    app = get_flask_app()
+    app = get_flask_app()  # ✅ AGORA ESTA FUNÇÃO EXISTE
     
     try:
         with app.app_context():
             logger.info("🚀 Iniciando tarefa de busca de publicações...")
             
-            # ✅ SCRAPER DJEN - IMPLEMENTAÇÃO REAL
             from app.scrapers.djen.djen_scraper import DJENScraper
             scraper = DJENScraper()
             resultado_djen = scraper.executar()
             
             logger.info(f"✅ DJEN - {resultado_djen['total_publicacoes']} publicações encontradas")
             
-            # ✅ SCRAPER DJERJ (se tiver)
-            # from app.scrapers.djerj.scraper_completo_djerj import DJERJScraper
-            # scraper_djerj = DJERJScraper()
-            # resultado_djerj = scraper_djerj.executar()
-            
             return {
                 'status': 'success', 
                 'message': 'Tarefas concluídas',
                 'resultado_djen': resultado_djen,
-                # 'resultado_djerj': resultado_djerj  # descomente quando implementar
             }
             
     except Exception as e:
