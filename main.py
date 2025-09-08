@@ -13,23 +13,22 @@ if current_dir not in sys.path:
 # =========================
 # 2. IMPORTE A INSTÂNCIA DO CELERY
 # =========================
-# Importa a instância configurada do celery_worker.py (na raiz)
-from celery_worker import celery_app  # ✅ Agora importa do arquivo correto
+from celery_worker import celery_app  # ✅ Importa do arquivo correto
 
 # =========================
-# 4. IMPORTAÇÕES DO SEU APP
+# 3. IMPORTAÇÕES DO SEU APP
 # =========================
 from app import create_app
 from app.routes.webhook import webhook_bp
-from app.tasks import tarefa_buscar_publicacoes
+from app.tasks import tarefa_buscar_publicacoes  # ✅ APENAS TASK EXISTENTE
 
 # =========================
-# 5. CRIAÇÃO DO FLASK APP
+# 4. CRIAÇÃO DO FLASK APP
 # =========================
 app = create_app()
 
 # =========================
-# 6. ROTAS
+# 5. ROTAS
 # =========================
 @app.route('/healthcheck')
 def healthcheck():
@@ -38,12 +37,12 @@ def healthcheck():
 @app.route('/test-scraper', methods=['GET'])
 def test_scraper():
     """
-    Dispara uma tarefa assíncrona para testar o scraper no Celery Worker.
+    Dispara a tarefa PRINCIPAL para teste real.
     """
-    task = test_scraper_task.delay()
+    task = tarefa_buscar_publicacoes.delay()  # ✅ USA TASK EXISTENTE
     return jsonify({
         'status': 'success',
-        'message': 'Tarefa de teste do scraper foi iniciada',
+        'message': 'Tarefa de scraper principal iniciada (teste real)',
         'task_id': task.id,
         'task_status': 'PENDING'
     }), 200
@@ -61,12 +60,12 @@ def iniciar_scraper_webhook():
     }), 202
 
 # =========================
-# 7. BLUEPRINTS
+# 6. BLUEPRINTS
 # =========================
 app.register_blueprint(webhook_bp, url_prefix="/webhook")
 
 # =========================
-# 8. EXECUÇÃO LOCAL
+# 7. EXECUÇÃO LOCAL
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
