@@ -1,12 +1,53 @@
 services:
-  - type: worker
-    name: worker-recorte-digital-prod
-    startCommand: celery -A celery worker --loglevel=info --concurrency=1 --queues=default
-    # ✅ Note: "celery" (arquivo) não "app.celery_worker"
+  - type: web
+    name: recorte-digital-web
+    env: docker
+    dockerfilePath: ./Dockerfile
+    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2 --preload
+    healthCheckPath: /healthcheck
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          name: redis-recorte-digital
+          type: redis
+          property: connectionString
+      - key: DATABASE_URL
+      - key: WHATSAPP_API_URL
+      - key: IMPORT_KEY
 
-  - type: worker  
-    name: beat-recorte-digital-prod
+  - type: worker
+    name: recorte-digital-worker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    startCommand: celery -A celery worker --loglevel=info --concurrency=1
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          name: redis-recorte-digital
+          type: redis
+          property: connectionString
+      - key: DATABASE_URL
+      - key: WHATSAPP_API_URL
+      - key: IMPORT_KEY
+
+  - type: worker
+    name: recorte-digital-beat
+    env: docker
+    dockerfilePath: ./Dockerfile
     startCommand: celery -A celery beat --loglevel=info
     envVars:
+      - key: REDIS_URL
+        fromService:
+          name: redis-recorte-digital
+          type: redis
+          property: connectionString
+      - key: DATABASE_URL
+      - key: WHATSAPP_API_URL
+      - key: IMPORT_KEY
       - key: IS_BEAT
         value: "true"
+
+  - type: redis
+    name: redis-recorte-digital
+    plan: free
+    ipAllowList: []
