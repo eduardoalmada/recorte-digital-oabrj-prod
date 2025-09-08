@@ -47,5 +47,11 @@ celery.autodiscover_tasks(['app'], force=True)
 # ✅ Exporta a instância para ser importada pelo main.py
 celery_app = celery  # <-- ESTA LINHA DEVE EXISTIR
 
+# Adicionar estas configurações
+broker_connection_timeout = 30
+broker_heartbeat = 10
+broker_heartbeat_checkrate = 2.0
+event_queue_ttl = 60
+
 if __name__ == '__main__':
     celery.start()
