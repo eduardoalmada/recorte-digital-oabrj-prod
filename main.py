@@ -17,16 +17,6 @@ if current_dir not in sys.path:
 from celery_worker import celery_app  # ✅ Agora importa do arquivo correto
 
 # =========================
-# 3. FORÇAR CONEXÃO COM REDIS (EVITA ERRO)
-# =========================
-# Esta linha é crucial para evitar ConnectionRefusedError
-try:
-    celery_app.connection()
-    print("✅ Conexão com Redis estabelecida no web service")
-except Exception as e:
-    print(f"⚠️  Aviso na conexão Redis: {e}")
-
-# =========================
 # 4. IMPORTAÇÕES DO SEU APP
 # =========================
 from app import create_app
