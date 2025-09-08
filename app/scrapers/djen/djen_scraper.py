@@ -11,9 +11,14 @@ import os
 logger = logging.getLogger(__name__)
 
 class DJENScraper:
-    def __init__(self):
-        from .djen_client import DJENClient
-        self.client = DJENClient()
+    def __init__(self, client=None):  # ✅ ACEITA CLIENT EXTERNO
+        if client:
+            self.client = client
+            self.client_externo = True  # ✅ MARCA SE CLIENT VEIO DE FORA
+        else:
+            from .djen_client import DJENClient
+            self.client = DJENClient()
+            self.client_externo = False
     
     def executar(self, data_ref: date = None) -> Dict[str, any]:
         data_ref = data_ref or date.today()
@@ -98,9 +103,11 @@ class DJENScraper:
             resultados['erros'].append(error_msg)
             logger.error(error_msg, exc_info=True)
         finally:
-            self.client.close()
+            # ✅ FECHA O CLIENT APENAS SE ELE FOI CRIADO INTERNAMENTE
+            if not self.client_externo:
+                self.client.close()
         
-        # ✅ LOG FINAL COMPLETO (SUA RECOMENDAÇÃO)
+        # ✅ LOG FINAL COMPLETO
         logger.info(
             f"🎯 RESULTADO FINAL - "
             f"Publicações: {resultados['total_publicacoes']}, "
@@ -145,7 +152,7 @@ class DJENScraper:
                     "isGroup": False
                 }
                 
-                # ✅ TIMEOUT DE 30 SEGUNDOS (SUA RECOMENDAÇÃO)
+                # ✅ TIMEOUT DE 30 SEGUNDOS
                 response = requests.post(
                     f"{uzapi_url}/send-text",
                     json=payload,
