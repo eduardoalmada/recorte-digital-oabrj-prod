@@ -1,16 +1,15 @@
 from celery import current_app as celery
 from app import create_app
 import logging
-from functools import lru_cache  # ✅ Import necessário para o cache
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
-# ✅ ADICIONE ESTA FUNÇÃO (ela estava faltando)
 @lru_cache(maxsize=1)
 def get_flask_app():
     """Retorna instância única da app Flask com contexto"""
     app = create_app()
-    app.app_context().push()  # ✅ Cria e ativa o contexto
+    app.app_context().push()
     return app
 
 @celery.task(
@@ -22,15 +21,21 @@ def get_flask_app():
     soft_time_limit=3300
 )
 def tarefa_buscar_publicacoes(self):
-    """Task principal para buscar publicações com retry automático"""
-    app = get_flask_app()  # ✅ AGORA ESTA FUNÇÃO EXISTE
+    """Task principal - ChromeDriver criado DENTRO da task"""
+    app = get_flask_app()
     
     try:
         with app.app_context():
             logger.info("🚀 Iniciando tarefa de busca de publicações...")
             
+            # ✅ CHROME DRIVER CRIADO AQUI MESMO (SUA SOLUÇÃO)
+            from app.scrapers.djen.djen_client import DJENClient
+            client = DJENClient()  # ✅ Criado na task!
+            
+            # ✅ USA SEU DJENScraper MAS PASSANDO O CLIENT
             from app.scrapers.djen.djen_scraper import DJENScraper
-            scraper = DJENScraper()
+            scraper = DJENScraper(client)  # ✅ Client injetado!
+            
             resultado_djen = scraper.executar()
             
             logger.info(f"✅ DJEN - {resultado_djen['total_publicacoes']} publicações encontradas")
@@ -44,3 +49,10 @@ def tarefa_buscar_publicacoes(self):
     except Exception as e:
         logger.error(f"❌ Erro na tarefa de scraping: {e}")
         raise self.retry(exc=e, countdown=300)
+    finally:
+        # ✅ GARANTE FECHAMENTO (mesmo com erro)
+        if 'client' in locals():
+            try:
+                client.close()
+            except:
+                pass
