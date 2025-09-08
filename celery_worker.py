@@ -10,7 +10,7 @@ celery = Celery(
     "recorte_digital",
     broker=os.getenv("REDIS_BROKER_URL"),
     backend=os.getenv("REDIS_BROKER_URL"),
-    include=['app.tasks']
+    include=['app.tasks', 'app.tasks.test_scraper_task', 'app.tasks.tarefa_apenas_djen']  # ✅ ADICIONE EXPLICITAMENTE
 )
 
 # ✅ Configurações de produção
