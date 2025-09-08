@@ -2,26 +2,49 @@ import os
 import sys
 from flask import Flask, jsonify
 from datetime import datetime
+from celery import Celery  # Importação essencial
 
-# ✅ 1. IMPORTAÇÃO E INSTÂNCIA DA APP FLASK
-# O PYTHONPATH é handled pelo Dockerfile, esta parte é opcional
+# =========================
+# 1. IMPORTAÇÃO E PYTHONPATH
+# =========================
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
+# =========================
+# 2. INICIALIZAÇÃO DO CELERY (GLOBAL)
+# =========================
+# Esta instância será acessível tanto pelo web service quanto pelo worker
+celery_app = Celery(
+    "recorte_digital",
+    broker=os.getenv("REDIS_BROKER_URL"),
+    backend=os.getenv("REDIS_BROKER_URL"),
+    include=['app.tasks']
+)
+
+# Força a conexão com o Redis na inicialização do web service
+# Isso evita o ConnectionRefusedError quando tentar enviar tarefas
+celery_app.connection()
+
+# =========================
+# 3. IMPORTAÇÕES APÓS O CELERY
+# =========================
 from app import create_app
 from app.routes.webhook import webhook_bp
 from app.tasks import test_scraper_task, tarefa_buscar_publicacoes
 
-# 2. Crie o app
+# =========================
+# 4. CRIAÇÃO DO FLASK APP
+# =========================
 app = create_app()
 
-# 3. Defina as rotas
+# =========================
+# 5. ROTAS
+# =========================
 @app.route('/healthcheck')
 def healthcheck():
     return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
 
-# ✅ ROTA PARA TESTAR O SCRAPER: AGORA DISPARA UMA TAREFA CELERY
 @app.route('/test-scraper', methods=['GET'])
 def test_scraper():
     """
@@ -35,7 +58,6 @@ def test_scraper():
         'task_status': 'PENDING'
     }), 200
 
-# ✅ ROTA PARA DISPARAR A TAREFA PRINCIPAL DO SCRAPER
 @app.route('/webhook/iniciar-scraper', methods=['POST'])
 def iniciar_scraper_webhook():
     """
@@ -46,10 +68,15 @@ def iniciar_scraper_webhook():
         "status": "success",
         "message": "Tarefa de scraper principal foi iniciada",
         "task_id": task.id
-    }), 202 # HTTP 202 indica que a requisição foi aceita para processamento
+    }), 202
 
-# 4. Registre blueprints
+# =========================
+# 6. BLUEPRINTS
+# =========================
 app.register_blueprint(webhook_bp, url_prefix="/webhook")
 
+# =========================
+# 7. EXECUÇÃO LOCAL
+# =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
