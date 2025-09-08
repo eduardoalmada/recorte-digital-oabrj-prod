@@ -19,13 +19,14 @@ class DJENScraper:
             'data': data_ref.isoformat(),
             'total_publicacoes': 0,
             'total_mencoes': 0,
-            'tribunais_processados': [],
+            'tribunais_processados': ['DJEN'],  # ✅ Adicionado DJEN como tribunal processado
             'erros': []
         }
         
         try:
             logger.info("🚀 Iniciando scraping DJEN com Selenium")
             
+            # ✅ IMPLEMENTE ESTE MÉTODO NO DJENClient
             publicacoes = self.client.buscar_publicacoes_por_data(data_ref)
             resultados['total_publicacoes'] = len(publicacoes)
             
@@ -39,13 +40,28 @@ class DJENScraper:
                 advogados = Advogado.query.filter_by(ativo=True).all()
                 logger.info(f"🔍 Processando {len(advogados)} advogados")
                 
-                # TODO: Implementar lógica de matching
-                resultados['total_mencoes'] = 0
+                # ✅ LÓGICA DE MATCHING SIMPLIFICADA
+                total_mencoes = 0
+                for publicacao in publicacoes:
+                    texto_publicacao = publicacao.get('texto', '')
+                    for advogado in advogados:
+                        if advogado.nome and advogado.nome.upper() in texto_publicacao.upper():
+                            total_mencoes += 1
+                            # ✅ AQUI VOCÊ PODE SALVAR A MENCÃO NO BANCO
+                            # from app.models import Mention
+                            # mention = Mention(advogado_id=advogado.id, ...)
+                            # db.session.add(mention)
+                
+                resultados['total_mencoes'] = total_mencoes
+                logger.info(f"✅ DJEN - {total_mencoes} menções encontradas")
+                
+            # ✅ SALVAR ALTERAÇÕES NO BANCO
+            db.session.commit()
                 
         except Exception as e:
             error_msg = f"Erro no DJENScraper: {str(e)}"
             resultados['erros'].append(error_msg)
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)  # ✅ Adicionado traceback completo
         finally:
             # ✅ GARANTE FECHAMENTO DO CLIENT
             self.client.close()
