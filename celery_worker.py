@@ -12,7 +12,6 @@ celery = Celery(
     backend=os.getenv("REDIS_BROKER_URL"),
     include=['app.tasks']
 )
-)
 
 # ✅ Configurações de produção
 celery.conf.update(
