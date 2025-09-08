@@ -2,7 +2,6 @@ import os
 import sys
 from flask import Flask, jsonify
 from datetime import datetime
-from celery import Celery  # Importação essencial
 
 # =========================
 # 1. IMPORTAÇÃO E PYTHONPATH
@@ -12,34 +11,35 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 # =========================
-# 2. INICIALIZAÇÃO DO CELERY (GLOBAL)
+# 2. IMPORTE A INSTÂNCIA DO CELERY
 # =========================
-# Esta instância será acessível tanto pelo web service quanto pelo worker
-celery_app = Celery(
-    "recorte_digital",
-    broker=os.getenv("REDIS_BROKER_URL"),
-    backend=os.getenv("REDIS_BROKER_URL"),
-    include=['app.tasks']
-)
-
-# Força a conexão com o Redis na inicialização do web service
-# Isso evita o ConnectionRefusedError quando tentar enviar tarefas
-celery_app.connection()
+# Importa a instância configurada do celery_worker.py (na raiz)
+from celery_worker import celery_app  # ✅ Agora importa do arquivo correto
 
 # =========================
-# 3. IMPORTAÇÕES APÓS O CELERY
+# 3. FORÇAR CONEXÃO COM REDIS (EVITA ERRO)
+# =========================
+# Esta linha é crucial para evitar ConnectionRefusedError
+try:
+    celery_app.connection()
+    print("✅ Conexão com Redis estabelecida no web service")
+except Exception as e:
+    print(f"⚠️  Aviso na conexão Redis: {e}")
+
+# =========================
+# 4. IMPORTAÇÕES DO SEU APP
 # =========================
 from app import create_app
 from app.routes.webhook import webhook_bp
 from app.tasks import test_scraper_task, tarefa_buscar_publicacoes
 
 # =========================
-# 4. CRIAÇÃO DO FLASK APP
+# 5. CRIAÇÃO DO FLASK APP
 # =========================
 app = create_app()
 
 # =========================
-# 5. ROTAS
+# 6. ROTAS
 # =========================
 @app.route('/healthcheck')
 def healthcheck():
@@ -71,12 +71,12 @@ def iniciar_scraper_webhook():
     }), 202
 
 # =========================
-# 6. BLUEPRINTS
+# 7. BLUEPRINTS
 # =========================
 app.register_blueprint(webhook_bp, url_prefix="/webhook")
 
 # =========================
-# 7. EXECUÇÃO LOCAL
+# 8. EXECUÇÃO LOCAL
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
