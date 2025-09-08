@@ -10,7 +10,7 @@ celery = Celery(
     "recorte_digital",
     broker=os.getenv("REDIS_BROKER_URL"),
     backend=os.getenv("REDIS_BROKER_URL"),
-    include=['app.tasks', 'app.tasks.test_scraper_task', 'app.tasks.tarefa_apenas_djen']  # ✅ ADICIONE EXPLICITAMENTE
+    include=['app.tasks']  # ✅ APENAS O MÓDULO PRINCIPAL
 )
 
 # ✅ Configurações de produção
@@ -33,15 +33,11 @@ if os.getenv("IS_BEAT", "false").lower() == "true":
     from celery.schedules import crontab
     celery.conf.beat_schedule = {
         'buscar-publicacoes-dia': {
-            'task': 'app.tasks.tarefa_buscar_publicacoes',
+            'task': 'app.tasks.tarefa_buscar_publicacoes',  # ✅ TASK EXISTENTE
             'schedule': crontab(hour=15, minute=0),  # 15h Brasília
             'options': {'queue': 'default'}
-        },
-        'buscar-djen-teste': {
-            'task': 'app.tasks.tarefa_apenas_djen',
-            'schedule': crontab(hour=16, minute=30),  # 16:30h
-            'options': {'queue': 'default'}
-        },
+        }
+        # ❌ REMOVIDO: 'buscar-djen-teste' (task não existe)
     }
     print("✅ Celery Beat configurado e ativo")
 
