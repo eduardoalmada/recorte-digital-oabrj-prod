@@ -48,5 +48,8 @@ if os.getenv("IS_BEAT", "false").lower() == "true":
 # ✅ Auto-discover para tasks em outros módulos
 celery.autodiscover_tasks(['app'], force=True)
 
+# ✅ Exporta a instância para ser importada pelo main.py
+celery_app = celery  # <-- ESTA LINHA DEVE EXISTIR
+
 if __name__ == '__main__':
     celery.start()
