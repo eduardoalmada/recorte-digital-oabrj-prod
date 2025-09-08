@@ -1,53 +1,53 @@
 services:
+  # ✅ SERVIÇO WEB (GUNICORN)
   - type: web
-    name: recorte-digital-web
+    name: web-recorte-digital-prod
     env: docker
     dockerfilePath: ./Dockerfile
-    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2 --preload
-    healthCheckPath: /healthcheck
+    plan: free
+    # ✅ Adiciona a porta 10000 para clareza e consistência
+    ports:
+      - 10000
+    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT --timeout 60 --workers 2 --preload
     envVars:
-      - key: REDIS_URL
+      # ✅ Usa o nome padrão do Celery para o broker
+      - key: CELERY_BROKER_URL
         fromService:
-          name: redis-recorte-digital
           type: redis
+          name: redis-broker-recorte-digital-prod
           property: connectionString
-      - key: DATABASE_URL
-      - key: WHATSAPP_API_URL
-      - key: IMPORT_KEY
+      # ✅ Adiciona a porta como variável de ambiente (boa prática)
+      - key: PORT
+        value: "10000"
 
+  # ✅ SERVIÇO WORKER (CELERY)
   - type: worker
-    name: recorte-digital-worker
+    name: worker-recorte-digital-prod
     env: docker
     dockerfilePath: ./Dockerfile
-    startCommand: celery -A celery worker --loglevel=info --concurrency=1
+    plan: free
+    startCommand: celery -A app.celery_worker.celery worker --loglevel=info --concurrency=1 --queues=default
     envVars:
-      - key: REDIS_URL
+      # ✅ Usa o nome padrão do Celery para o broker
+      - key: CELERY_BROKER_URL
         fromService:
-          name: redis-recorte-digital
           type: redis
+          name: redis-broker-recorte-digital-prod
           property: connectionString
-      - key: DATABASE_URL
-      - key: WHATSAPP_API_URL
-      - key: IMPORT_KEY
 
+  # ✅ SERVIÇO BEAT (CELERY BEAT)
   - type: worker
-    name: recorte-digital-beat
+    name: beat-recorte-digital-prod
     env: docker
     dockerfilePath: ./Dockerfile
-    startCommand: celery -A celery beat --loglevel=info
+    plan: free
+    startCommand: celery -A app.celery_worker.celery beat --loglevel=info
     envVars:
-      - key: REDIS_URL
-        fromService:
-          name: redis-recorte-digital
-          type: redis
-          property: connectionString
-      - key: DATABASE_URL
-      - key: WHATSAPP_API_URL
-      - key: IMPORT_KEY
       - key: IS_BEAT
         value: "true"
-
-  - type: redis
-    name: redis-recorte-digital
-    plan: free
-    ipAllowList: []
+      # ✅ Usa o nome padrão do Celery para o broker
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: redis-broker-recorte-digital-prod
+          property: connectionString
