@@ -26,7 +26,8 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    startCommand: celery -A app.celery_worker.celery worker --loglevel=info --concurrency=1 --queues=default
+    # ✅ Comando correto para o worker, apontando para o arquivo celery.py na raiz
+    startCommand: celery -A celery worker --loglevel=info --concurrency=1 --queues=default
     envVars:
       # ✅ Usa o nome padrão do Celery para o broker
       - key: CELERY_BROKER_URL
@@ -41,7 +42,8 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    startCommand: celery -A app.celery_worker.celery beat --loglevel=info
+    # ✅ Comando correto para o beat, apontando para o arquivo celery.py na raiz
+    startCommand: celery -A celery beat --loglevel=info
     envVars:
       - key: IS_BEAT
         value: "true"
