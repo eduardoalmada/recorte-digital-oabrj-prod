@@ -21,7 +21,7 @@ from celery_worker import celery_app  # ✅ Agora importa do arquivo correto
 # =========================
 from app import create_app
 from app.routes.webhook import webhook_bp
-from app.tasks import test_scraper_task, tarefa_buscar_publicacoes
+from app.tasks import tarefa_buscar_publicacoes
 
 # =========================
 # 5. CRIAÇÃO DO FLASK APP
