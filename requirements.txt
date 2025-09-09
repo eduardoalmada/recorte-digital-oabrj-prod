@@ -28,6 +28,7 @@ selenium==4.34.2
 beautifulsoup4==4.13.4
 soupsieve==2.7
 psutil==5.9.0
+retry==0.9.2
 
 # ─── HTTP / Redes ──────────────────────────────────────────────
 requests==2.32.4
