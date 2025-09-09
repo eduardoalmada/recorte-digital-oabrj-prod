@@ -5,51 +5,64 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    # ✅ Adiciona a porta 10000 para clareza e consistência
     ports:
       - 10000
-    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT --timeout 60 --workers 2 --preload
+    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2 --preload
     envVars:
-      # ✅ Usa o nome padrão do Celery para o broker
       - key: CELERY_BROKER_URL
         fromService:
           type: redis
           name: redis-broker-recorte-digital-prod
           property: connectionString
-      # ✅ Adiciona a porta como variável de ambiente (boa prática)
       - key: PORT
         value: "10000"
 
-  # ✅ SERVIÇO WORKER (CELERY)
+  # ✅ SERVIÇO WORKER (OTIMIZADO PARA SCRAPING)
   - type: worker
     name: worker-recorte-digital-prod
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    # ✅ Comando correto para o worker, apontando para o arquivo celery.py na raiz
-    startCommand: celery -A celery worker --loglevel=info --concurrency=1 --queues=default
+    startCommand: |
+      celery -A celery_worker.celery_app worker \
+        --loglevel=info \
+        --concurrency=1 \
+        --max-tasks-per-child=20 \
+        --without-gossip \
+        --without-mingle \
+        --without-heartbeat \
+        --queues=default
     envVars:
-      # ✅ Usa o nome padrão do Celery para o broker
       - key: CELERY_BROKER_URL
         fromService:
           type: redis
           name: redis-broker-recorte-digital-prod
           property: connectionString
 
-  # ✅ SERVIÇO BEAT (CELERY BEAT)
+  # ✅ SERVIÇO BEAT (OTIMIZADO)
   - type: worker
     name: beat-recorte-digital-prod
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    # ✅ Comando correto para o beat, apontando para o arquivo celery.py na raiz
-    startCommand: celery -A celery beat --loglevel=info
+    startCommand: |
+      rm -f /tmp/celerybeat-prod-schedule /tmp/celerybeat-prod.pid
+      IS_BEAT=true celery -A celery_worker.celery_app beat \
+        --loglevel=info \
+        --pidfile=/tmp/celerybeat-prod.pid \
+        --schedule=/tmp/celerybeat-prod-schedule
     envVars:
       - key: IS_BEAT
         value: "true"
-      # ✅ Usa o nome padrão do Celery para o broker
       - key: CELERY_BROKER_URL
         fromService:
           type: redis
           name: redis-broker-recorte-digital-prod
           property: connectionString
+
+  # ✅ SERVIÇO REDIS (ESSENTIALS 256MB)
+  - type: redis
+    name: redis-broker-recorte-digital-prod
+    plan: essentials-256mb  # ✅ PLANO CORRETO
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
