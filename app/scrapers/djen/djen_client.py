@@ -13,7 +13,7 @@ from datetime import datetime
 import shutil
 import psutil
 from functools import wraps
-import retry  # ✅ pip install retry
+import retry
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +39,18 @@ def retry_on_failure(max_retries=3, delay=2, backoff=2):
 
 class DJENClient:
     def __init__(self):
-        # ✅ MONITORAMENTO INICIAL
+        # ✅ MONITORAMENTO INICIAL (APENAS WARNING, NÃO ERRO)
         self.memoria_inicial = psutil.virtual_memory()
         if self.memoria_inicial.percent > 85:
-            raise MemoryError(f"Memória insuficiente: {self.memoria_inicial.percent}%")
+            logger.warning(f"🚨 Memória inicial alta: {self.memoria_inicial.percent}% - Continuando com cautela")
         
         options = Options()
         options.add_argument('--headless=new')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
-        options.add_argument('--remote-debugging-port=0')
+        options.add_argument('--disable-software-rasterizer')  # ✅ MAIS ESTABILIDADE
+        options.add_argument('--remote-debugging-port=9222')   # ✅ PORTA FIXA
         options.add_argument('--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36')
         options.add_argument('--window-size=1920,1080')
         
@@ -59,21 +60,22 @@ class DJENClient:
         options.add_argument('--disable-default-apps')
         options.add_argument('--disable-sync')
         options.add_argument('--disable-translate')
+        options.add_argument('--disable-features=VizDisplayCompositor')
         
-        # ✅ DIRETÓRIOS TEMPORÁRIOS
-        self.temp_user_dir = tempfile.mkdtemp(prefix='chrome-djen-')
-        self.temp_cache_dir = tempfile.mkdtemp(prefix='chrome-cache-')
+        # ✅ DIRETÓRIOS TEMPORÁRIOS ÚNICOS (COM TIMESTAMP)
+        self.temp_user_dir = tempfile.mkdtemp(prefix=f'chrome-djen-{int(time.time())}-')
+        self.temp_cache_dir = tempfile.mkdtemp(prefix=f'chrome-cache-{int(time.time())}-')
         options.add_argument(f'--user-data-dir={self.temp_user_dir}')
         options.add_argument(f'--disk-cache-dir={self.temp_cache_dir}')
         
-        service = Service(executable_path='/usr/local/bin/chromedriver')
+        self.service = Service(executable_path='/usr/local/bin/chromedriver')
         
         try:
-            self.driver = webdriver.Chrome(service=service, options=options)
+            self.driver = webdriver.Chrome(service=self.service, options=options)
             self.driver.implicitly_wait(10)
             self.BASE_URL = "https://comunica.pje.jus.br"
             
-            logger.info(f"🚀 ChromeDriver iniciado | Memória: {self.memoria_inicial.percent}%")
+            logger.info(f"🚀 ChromeDriver iniciado | Memória: {self.memoria_inicial.percent}% | Temp dir: {self.temp_user_dir}")
             
         except Exception as e:
             self._cleanup_temp_dirs()
@@ -197,8 +199,11 @@ class DJENClient:
                 if cpu_percent > 85:
                     logger.warning("🚨 ALTA UTILIZAÇÃO DE CPU")
                 
+                # ✅ FECHAMENTO GARANTIDO (DRIVER + SERVICE)
                 self.driver.quit()
-                logger.info("✅ ChromeDriver fechado")
+                if hasattr(self, 'service'):
+                    self.service.stop()
+                logger.info("✅ ChromeDriver e Service fechados")
                 
         except Exception as e:
             logger.warning(f"⚠️ Erro ao fechar driver: {e}")
@@ -210,5 +215,6 @@ class DJENClient:
         try:
             shutil.rmtree(self.temp_user_dir, ignore_errors=True)
             shutil.rmtree(self.temp_cache_dir, ignore_errors=True)
+            logger.debug(f"🧹 Diretórios temporários limpos: {self.temp_user_dir}")
         except Exception as e:
             logger.warning(f"⚠️ Erro na limpeza: {e}")
