@@ -52,6 +52,7 @@ services:
   redis:
     image: redis:7
     container_name: recorte_redis
+    command: redis-server --requirepass 8892fa8f29fbf1d77781e5371c8d27e66ddf8652aa33f4a0082a44cde91fe8d9 
     ports:
       - "6379:6379"
     restart: always
